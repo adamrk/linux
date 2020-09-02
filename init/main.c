@@ -825,6 +825,7 @@ void __init __weak arch_call_rest_init(void)
 	rest_init();
 }
 
+int my_init(void);//
 asmlinkage __visible void __init start_kernel(void)
 {
 	char *command_line;
@@ -1035,6 +1036,10 @@ asmlinkage __visible void __init start_kernel(void)
 	acpi_subsystem_init();
 	arch_post_acpi_subsys_init();
 	sfi_init_late();
+
+	/*printk(KERN_EMERG "XXX: NICK\n");*/
+	/*pr_warn("XXX: NICK2\n");*/
+	/*my_init();*/
 
 	/* Do the rest non-__init'ed, we're now alive */
 	arch_call_rest_init();

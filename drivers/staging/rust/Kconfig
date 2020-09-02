@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0
+config RUST_HELLO_WORLD
+	tristate "Rust hello world driver"
+	help
+	  The rust hello world driver.
+
+	  Say "y" to statically link, or "m" to build a dynamically linked kernel
+	  module.

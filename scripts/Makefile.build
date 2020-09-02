@@ -129,6 +129,17 @@ quiet_cmd_cc_ll_c = CC $(quiet_modtag)  $@
 $(obj)/%.ll: $(src)/%.c FORCE
 	$(call if_changed_dep,cc_ll_c)
 
+# Rust
+# `rustc --emit=dep-info` produces test.d, move it to .test.o.d for fixdep.
+quiet_cmd_rustc_o_rs = RUSTC   $@
+      cmd_rustc_o_rs =                                                      \
+    rustc -C panic=abort -O --emit=obj,dep-info                             \
+    --target=x86_64-unknown-linux-gnu                                       \
+    -C relocation-model=static -C code-model=kernel                         \
+    --crate-type=staticlib -Z plt=y                                         \
+    -o $@ $<;                                                               \
+    mv -v $(patsubst %.o,%.d,$(@D)/$(@F)) $(@D)/.$(@F).d
+
 # C (.c) files
 # The C file is compiled and updated dependency information is generated.
 # (See cmd_cc_o_c + relevant part of rule_cc_o_c)
@@ -254,6 +265,13 @@ define rule_as_o_S
 	$(call cmd,modversions_S)
 endef
 
+# $(call cmd_and_fixdep,rustc_o_rs)
+# $(call cmd,rustc_o_rs)
+# maybe want modversions too?
+define rule_rustc_o_rs
+	$(call cmd,rustc_o_rs)
+endef
+
 # List module undefined symbols (or empty line if not enabled)
 ifdef CONFIG_TRIM_UNUSED_KSYMS
 cmd_undef_syms = $(NM) $< | sed -n 's/^  *U //p' | xargs echo
@@ -265,6 +283,9 @@ endif
 $(obj)/%.o: $(src)/%.c $(recordmcount_source) $(objtool_dep) FORCE
 	$(call cmd,force_checksrc)
 	$(call if_changed_rule,cc_o_c)
+
+$(obj)/%.o: $(src)/%.rs FORCE
+	$(call if_changed_rule,rustc_o_rs)
 
 cmd_mod = { \
 	echo $(if $($*-objs)$($*-y)$($*-m), $(addprefix $(obj)/, $($*-objs) $($*-y) $($*-m)), $(@:.mod=.o)); \
