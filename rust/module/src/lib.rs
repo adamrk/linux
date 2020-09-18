@@ -242,8 +242,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
                 #[used]
                 static __{name}_{param_name}_struct: __{name}_{param_name}_RacyKernelParam = __{name}_{param_name}_RacyKernelParam(kernel::bindings::kernel_param {{
                     name: __{name}_{param_name}_name,
-                    // TODO: `THIS_MODULE`
-                    mod_: core::ptr::null_mut(),
+                    mod_: THIS_MODULE.0,
                     ops: unsafe {{ &kernel::bindings::param_ops_{param_kernel_type} }} as *const kernel::bindings::kernel_param_ops,
                     perm: {permissions},
                     level: -1,
@@ -268,6 +267,17 @@ pub fn module(ts: TokenStream) -> TokenStream {
     format!(
         "
             static mut __MOD: Option<{type_}> = None;
+
+            struct __THIS_MODULE(*mut kernel::bindings::module);
+
+            unsafe impl Sync for __THIS_MODULE {{
+            }}
+
+            #[cfg(MODULE)]
+            static THIS_MODULE: __THIS_MODULE = __THIS_MODULE(unsafe {{ &kernel::bindings::__this_module }} as *const _ as *mut kernel::bindings::module);
+
+            #[cfg(not(MODULE))]
+            static THIS_MODULE: __THIS_MODULE = __THIS_MODULE(core::ptr::null_mut());
 
             // Loadable modules need to export the `{{init,cleanup}}_module` identifiers
             #[cfg(MODULE)]
