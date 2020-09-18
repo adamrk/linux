@@ -8,10 +8,10 @@ edition = "2018"
 publish = false
 
 [dependencies]
-bitflags = "1"
+bitflags = "=1.2.1"
 module = { path = "../module" }
 
 [build-dependencies]
-bindgen = "0.54"
+bindgen = "=0.54.0"
 shlex = { path = "../shlex" }
 
