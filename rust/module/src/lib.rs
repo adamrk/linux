@@ -273,6 +273,8 @@ pub fn module(ts: TokenStream) -> TokenStream {
             unsafe impl Sync for __THIS_MODULE {{
             }}
 
+            // TODO: provide a better abstraction to avoid passing around
+            // `THIS_MODULE.0`, i.e. `this_module: *mut bindings::module` parameters.
             #[cfg(MODULE)]
             static THIS_MODULE: __THIS_MODULE = __THIS_MODULE(unsafe {{ &kernel::bindings::__this_module }} as *const _ as *mut kernel::bindings::module);
 
