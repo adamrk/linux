@@ -2,6 +2,9 @@
 
 //! The `kernel` prelude
 
+/// ICE if we use `--extern module`
+extern crate module;
+
 pub use alloc::{borrow::ToOwned, string::String};
 
 pub use module::module;
