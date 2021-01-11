@@ -493,6 +493,9 @@ int param_set_copystring(const char *val, const struct kernel_param *kp)
 {
 	const struct kparam_string *kps = kp->str;
 
+	pr_err("DEBUG ------------------ setting param %s", kp->name);
+	pr_err("str address %px", kps->string);
+	pr_err("chars %c %c %c", kps->string[0], kps->string[1], kps->string[2]);
 	if (strlen(val)+1 > kps->maxlen) {
 		pr_err("%s: string doesn't fit in %u chars.\n",
 		       kp->name, kps->maxlen-1);

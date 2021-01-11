@@ -5,7 +5,7 @@
 use proc_macro::{token_stream, Delimiter, Group, TokenStream, TokenTree};
 
 fn expect_ident(it: &mut token_stream::IntoIter) -> String {
-    if let TokenTree::Ident(ident) = it.next().unwrap() {
+    if let TokenTree::Ident(ident) = it.next().expect("Expected Ident") {
         ident.to_string()
     } else {
         panic!("Expected Ident");
@@ -13,7 +13,7 @@ fn expect_ident(it: &mut token_stream::IntoIter) -> String {
 }
 
 fn expect_punct(it: &mut token_stream::IntoIter) -> char {
-    if let TokenTree::Punct(punct) = it.next().unwrap() {
+    if let TokenTree::Punct(punct) = it.next().expect("Expected Punct") {
         punct.as_char()
     } else {
         panic!("Expected Punct");
@@ -21,7 +21,7 @@ fn expect_punct(it: &mut token_stream::IntoIter) -> char {
 }
 
 fn expect_literal(it: &mut token_stream::IntoIter) -> String {
-    if let TokenTree::Literal(literal) = it.next().unwrap() {
+    if let TokenTree::Literal(literal) = it.next().expect("Expected Literal") {
         literal.to_string()
     } else {
         panic!("Expected Literal");
@@ -29,7 +29,7 @@ fn expect_literal(it: &mut token_stream::IntoIter) -> String {
 }
 
 fn expect_group(it: &mut token_stream::IntoIter) -> Group {
-    if let TokenTree::Group(group) = it.next().unwrap() {
+    if let TokenTree::Group(group) = it.next().expect("Expected Group") {
         group
     } else {
         panic!("Expected Group");
@@ -40,6 +40,20 @@ fn expect_end(it: &mut token_stream::IntoIter) {
     if let None = it.next() {
     } else {
         panic!("Expected end");
+    }
+}
+
+/// Only expected to parse types that are allowed for module parameters.
+fn expect_type(it: &mut token_stream::IntoIter) -> String {
+    match it.next().expect("Expected Type") {
+        TokenTree::Punct(punct) => {
+            assert_eq!(punct.as_char(), '&');
+            let ident = expect_ident(it);
+            assert_eq!(ident, "str");
+            "&str".to_string()
+        }
+        TokenTree::Ident(ident) => ident.to_string(),
+        _ => panic!("Expected type"),
     }
 }
 
@@ -60,6 +74,7 @@ fn get_literal(it: &mut token_stream::IntoIter, expected_name: &str) -> String {
 }
 
 fn get_group(it: &mut token_stream::IntoIter, expected_name: &str) -> Group {
+    println!("Getting Group");
     assert_eq!(expect_ident(it), expected_name);
     assert_eq!(expect_punct(it), ':');
     let group = expect_group(it);
@@ -74,6 +89,15 @@ fn get_byte_string(it: &mut token_stream::IntoIter, expected_name: &str) -> Stri
     assert!(byte_string.ends_with("\""));
 
     byte_string[2..byte_string.len() - 1].to_string()
+}
+
+fn get_string(it: &mut token_stream::IntoIter, expected_name: &str) -> String {
+    let string = get_literal(it, expected_name);
+
+    assert!(string.starts_with("\""));
+    assert!(string.ends_with("\""));
+
+    string[1..string.len() - 1].to_string()
 }
 
 fn __build_modinfo_string_base(
@@ -208,17 +232,18 @@ pub fn module(ts: TokenStream) -> TokenStream {
         };
 
         assert_eq!(expect_punct(&mut it), ':');
-        let param_type = expect_ident(&mut it);
+        let param_type = expect_type(&mut it);
+        println!("Got param type {}", param_type);
         let group = expect_group(&mut it);
         assert_eq!(expect_punct(&mut it), ',');
 
         assert_eq!(group.delimiter(), Delimiter::Brace);
 
         let mut param_it = group.stream().into_iter();
-        let param_default = if param_type == "bool" {
-            get_ident(&mut param_it, "default")
-        } else {
-            get_literal(&mut param_it, "default")
+        let param_default = match param_type.as_ref() {
+            "bool" => get_ident(&mut param_it, "default"),
+            "&str" => get_string(&mut param_it, "default"),
+            _ => get_literal(&mut param_it, "default"),
         };
         let param_permissions = get_literal(&mut param_it, "permissions");
         let param_description = get_byte_string(&mut param_it, "description");
@@ -229,6 +254,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
         let param_kernel_type = match param_type.as_ref() {
             "bool" => "bool",
             "i32" => "int",
+            "&str" => "string",
             t => panic!("Unrecognized type {}", t),
         };
 
@@ -244,18 +270,73 @@ pub fn module(ts: TokenStream) -> TokenStream {
             &param_name,
             &param_description,
         ));
-        params_modinfo.push_str(
-            &format!(
+        let param_type_internal = match param_type.as_ref() {
+            "&str" => format!("[u8; {}]", param_default.len() + 1),
+            _ => param_type.clone(),
+        };
+        let param_default = match param_type.as_ref() {
+            "&str" => format!("*b\"{}\0\"", param_default),
+            _ => param_default,
+        };
+        let read_func = match param_type.as_ref() {
+            "&str" => format!(
                 "
-                static mut __{name}_{param_name}_value: {param_type} = {param_default};
-
-                struct __{name}_{param_name};
-
-                impl __{name}_{param_name} {{
+                    fn read(&self) -> Result<&str, core::str::Utf8Error> {{
+                        unsafe {{
+                            let nul = __{name}_{param_name}_value
+                                .iter()
+                                .position(|&b| b == b'\0')
+                                .unwrap();
+                            core::str::from_utf8(&__{name}_{param_name}_value[0..nul])
+                        }}
+                    }}
+                ",
+                name = name,
+                param_name = param_name,
+            ),
+            _ => format!(
+                "
                     fn read(&self) -> {param_type} {{
                         unsafe {{ __{name}_{param_name}_value }}
                     }}
-                }}
+                ",
+                name = name,
+                param_name = param_name,
+                param_type = param_type,
+            ),
+        };
+        let kparam_ptr = match param_type.as_ref() {
+            "&str" => format!(
+                "
+                    __bindgen_anon_1: kernel::bindings::kernel_param__bindgen_ty_1 {{
+                        str_: &kernel::bindings::kparam_string {{
+                            maxlen: unsafe {{ __{name}_{param_name}_value.len() }} as u32 + 1,
+                            string: unsafe {{ (&__{name}_{param_name}_value).as_ptr() }}
+                                as *mut kernel::c_types::c_char,
+                        }} as *const _,
+                    }},
+                ",
+                name = name,
+                param_name = param_name,
+            ),
+            _ => format!(
+                "
+                    __bindgen_anon_1: kernel::bindings::kernel_param__bindgen_ty_1 {{
+                        arg: unsafe {{ &__{name}_{param_name}_value }} as *const _ as *mut kernel::c_types::c_void,
+                    }},
+                ",
+                name = name,
+                param_name = param_name,
+            ),
+        };
+        params_modinfo.push_str(
+            &format!(
+                "
+                static mut __{name}_{param_name}_value: {param_type_internal} = {param_default};
+
+                struct __{name}_{param_name};
+
+                impl __{name}_{param_name} {{ {read_func} }}
 
                 const {param_name}: __{name}_{param_name} = __{name}_{param_name};
 
@@ -288,17 +369,17 @@ pub fn module(ts: TokenStream) -> TokenStream {
                     perm: {permissions},
                     level: -1,
                     flags: 0,
-                    __bindgen_anon_1: kernel::bindings::kernel_param__bindgen_ty_1 {{
-                        arg: unsafe {{ &__{name}_{param_name}_value }} as *const _ as *mut kernel::c_types::c_void,
-                    }},
+                    {kparam_ptr}
                 }});
                 ",
                 name = name,
-                param_type = param_type,
+                param_type_internal = param_type_internal,
+                read_func = read_func,
                 param_kernel_type = param_kernel_type,
                 param_default = param_default,
                 param_name = param_name,
                 permissions = param_permissions,
+                kparam_ptr = kparam_ptr,
             )
         );
     }
@@ -390,5 +471,5 @@ pub fn module(ts: TokenStream) -> TokenStream {
         file = &build_modinfo_string_only_builtin(&name, "file", &file),
         params_modinfo = params_modinfo,
         initcall_section = ".initcall6.init"
-    ).parse().unwrap()
+    ).parse().expect("Expected parsed token stream")
 }

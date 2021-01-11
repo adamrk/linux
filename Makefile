@@ -505,7 +505,8 @@ KBUILD_CPPFLAGS := -D__KERNEL__
 KBUILD_RUSTCFLAGS := --emit=dep-info,obj,link -Z binary_dep_depinfo=y \
 		     -C panic=abort -C embed-bitcode=n -C lto=n -C rpath=n \
 		     -C force-unwind-tables=n -C codegen-units=1 \
-		     -Z symbol-mangling-version=v0
+		     -Z symbol-mangling-version=v0 \
+			 -Z macro-backtrace
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_RUSTCFLAGS_KERNEL :=

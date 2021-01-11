@@ -1990,6 +1990,7 @@ static char *remove_dot(char *s)
 
 static void read_symbols(const char *modname)
 {
+	modpost_log(LOG_WARN, "read from %s\n", modname);
 	const char *symname;
 	char *version;
 	char *license;
@@ -2011,6 +2012,7 @@ static void read_symbols(const char *modname)
 		free(tmp);
 	}
 
+	modpost_log(LOG_WARN, "is vmlinux? %x\n", mod->is_vmlinux);
 	if (!mod->is_vmlinux) {
 		license = get_modinfo(&info, "license");
 		if (!license)
@@ -2034,7 +2036,11 @@ static void read_symbols(const char *modname)
 	}
 
 	for (sym = info.symtab_start; sym < info.symtab_stop; sym++) {
+		modpost_log(LOG_WARN, "checking symbol %s. Is present: %d\n", "__rust_alloc", find_symbol("__rust_alloc") ? 1 : 0);
 		symname = remove_dot(info.strtab + sym->st_name);
+		modpost_log(LOG_WARN, "doing symbol %s. Is present: %d\n", symname, find_symbol(symname) ? 1 : 0);
+		modpost_log(LOG_WARN, "checking symbol %s. Is present: %d\n", "__rust_alloc", find_symbol("__rust_alloc") ? 1 : 0);
+
 
 		handle_symbol(mod, &info, sym, symname);
 		handle_moddevtable(mod, &info, sym, symname);
@@ -2433,6 +2439,7 @@ static void write_if_changed(struct buffer *b, const char *fname)
  **/
 static void read_dump(const char *fname)
 {
+	modpost_log(LOG_WARN, "reading %s\n", fname);
 	char *buf, *pos, *line;
 
 	buf = read_text_file(fname);
@@ -2501,6 +2508,7 @@ static void write_dump(const char *fname)
 	const char *namespace;
 	int n;
 
+	modpost_log(LOG_WARN, "dumping syms %s\n", fname);
 	for (n = 0; n < SYMBOL_HASH_SIZE ; n++) {
 		symbol = symbolhash[n];
 		while (symbol) {
