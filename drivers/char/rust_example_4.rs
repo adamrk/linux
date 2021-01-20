@@ -36,6 +36,14 @@ impl KernelModule for RustExample4 {
         println!("[4] Parameters:");
         println!("[4]   my_bool:  {}", my_bool.read());
         println!("[4]   my_i32:   {}", my_i32.read());
+
+        // Including this large variable on the stack will trigger a call to
+        // `compiler_builtins::probestack::__rust_probestack` on x86_64.
+        // This will verify that we are able to link modules which call
+        // `__rust_probestack`.
+        let x: [u64; 1028] = [5; 1028];
+        println!("Large array has length: {}", x.len());
+
         Ok(RustExample4 {
             message: "on the heap!".to_owned(),
         })

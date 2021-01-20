@@ -37,7 +37,7 @@ impl KernelModule for RustExample3 {
         println!("[3]   my_bool:  {}", my_bool.read());
         println!("[3]   my_i32:   {}", my_i32.read());
 
-        // Including this large variable on the stack will trigger a call to 
+        // Including this large variable on the stack will trigger a call to
         // `compiler_builtins::probestack::__rust_probestack` on x86_64.
         // This will verify that we are able to link modules which call
         // `__rust_probestack`.
