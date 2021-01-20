@@ -5,7 +5,6 @@ obj-$(CONFIG_RUST) += core.o compiler_builtins.o alloc.o kernel.o
 extra-$(CONFIG_RUST) += bindings_generated.rs libmodule.so
 extra-$(CONFIG_RUST) += exports_core_generated.h exports_alloc_generated.h
 extra-$(CONFIG_RUST) += exports_kernel_generated.h
-extra-$(CONFIG_RUST) += exports_compiler_builtins_generated.h
 
 ifdef CONFIG_CC_IS_CLANG
 bindgen_c_flags = $(c_flags)
@@ -61,10 +60,6 @@ $(objtree)/rust/exports_alloc_generated.h: $(objtree)/rust/alloc.o FORCE
 
 $(objtree)/rust/exports_kernel_generated.h: exports_target_type := _RUST_GPL
 $(objtree)/rust/exports_kernel_generated.h: $(objtree)/rust/kernel.o FORCE
-	$(call if_changed,exports)
-
-$(objtree)/rust/exports_compiler_builtins_generated.h: exports_target_type := _RUST
-$(objtree)/rust/exports_compiler_builtins_generated.h: $(objtree)/rust/compiler_builtins.o FORCE
 	$(call if_changed,exports)
 
 quiet_cmd_rustc_procmacro = RUSTC P $@
