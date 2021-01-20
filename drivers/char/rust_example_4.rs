@@ -22,6 +22,11 @@ module! {
             permissions: 0o644,
             description: b"Example of i32",
         },
+        my_str: &str {
+            default: "default str val",
+            permissions: 0o644,
+            description: b"Example of a string param",
+        },
     },
 }
 
@@ -36,6 +41,10 @@ impl KernelModule for RustExample4 {
         println!("[4] Parameters:");
         println!("[4]   my_bool:  {}", my_bool.read());
         println!("[4]   my_i32:   {}", my_i32.read());
+        println!(
+            "[4]   my_str:   {}",
+            my_str.read().expect("Expected valid UTF8 parameter")
+        );
         Ok(RustExample4 {
             message: "on the heap!".to_owned(),
         })
