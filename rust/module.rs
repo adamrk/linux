@@ -43,20 +43,6 @@ fn expect_end(it: &mut token_stream::IntoIter) {
     }
 }
 
-/// Only expected to parse types that are allowed for module parameters.
-fn expect_type(it: &mut token_stream::IntoIter) -> String {
-    match it.next().expect("Expected Type") {
-        TokenTree::Punct(punct) => {
-            assert_eq!(punct.as_char(), '&');
-            let ident = expect_ident(it);
-            assert_eq!(ident, "str");
-            "&str".to_string()
-        }
-        TokenTree::Ident(ident) => ident.to_string(),
-        _ => panic!("Expected type"),
-    }
-}
-
 fn get_ident(it: &mut token_stream::IntoIter, expected_name: &str) -> String {
     assert_eq!(expect_ident(it), expected_name);
     assert_eq!(expect_punct(it), ':');
@@ -74,7 +60,6 @@ fn get_literal(it: &mut token_stream::IntoIter, expected_name: &str) -> String {
 }
 
 fn get_group(it: &mut token_stream::IntoIter, expected_name: &str) -> Group {
-    println!("Getting Group");
     assert_eq!(expect_ident(it), expected_name);
     assert_eq!(expect_punct(it), ':');
     let group = expect_group(it);
@@ -184,7 +169,7 @@ fn build_modinfo_string_param(module: &str, field: &str, param: &str, content: &
 /// The `type` argument should be a type which implements the [`KernelModule`] trait.
 /// Also accepts various forms of kernel metadata.
 ///
-/// Example:
+/// ## Example
 /// ```rust,no_run
 /// use kernel::prelude::*;
 ///
@@ -194,16 +179,33 @@ fn build_modinfo_string_param(module: &str, field: &str, param: &str, content: &
 ///     author: b"Rust for Linux Contributors",
 ///     description: b"My very own kernel module!",
 ///     license: b"GPL v2",
-///     params: {},
+///     params: {
+///        my_i32: i32 {
+///            default: 42,
+///            permissions: 0o644,
+///            description: b"Example of i32",
+///        },
+///    },
 /// }
 ///
 /// struct MyKernelModule;
 ///
 /// impl KernelModule for MyKernelModule {
 ///     fn init() -> KernelResult<Self> {
+///         println!("bool param is:  {}", my_bool.read());
 ///         Ok(MyKernelModule)
 ///     }
 /// }
+/// 
+/// ## Suported Parameter Types
+/// | Type         | `read(&self)` return type            |
+/// | ------------ | ------------------------------------ | 
+/// | `i32`        | `i32`                                |
+/// | `bool`       | `bool`                               |
+/// | `CopyString` | `Result<&str, core::str::Utf8Error>` |
+/// 
+/// For `CopyString` the parameter is copied into the buffer of the default value and
+/// cannot be longer than the default value.
 /// ```
 #[proc_macro]
 pub fn module(ts: TokenStream) -> TokenStream {
@@ -232,8 +234,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
         };
 
         assert_eq!(expect_punct(&mut it), ':');
-        let param_type = expect_type(&mut it);
-        println!("Got param type {}", param_type);
+        let param_type = expect_ident(&mut it);
         let group = expect_group(&mut it);
         assert_eq!(expect_punct(&mut it), ',');
 
@@ -242,7 +243,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
         let mut param_it = group.stream().into_iter();
         let param_default = match param_type.as_ref() {
             "bool" => get_ident(&mut param_it, "default"),
-            "&str" => get_string(&mut param_it, "default"),
+            "CopyString" => get_string(&mut param_it, "default"),
             _ => get_literal(&mut param_it, "default"),
         };
         let param_permissions = get_literal(&mut param_it, "permissions");
@@ -254,7 +255,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
         let param_kernel_type = match param_type.as_ref() {
             "bool" => "bool",
             "i32" => "int",
-            "&str" => "string",
+            "CopyString" => "string",
             t => panic!("Unrecognized type {}", t),
         };
 
@@ -271,15 +272,15 @@ pub fn module(ts: TokenStream) -> TokenStream {
             &param_description,
         ));
         let param_type_internal = match param_type.as_ref() {
-            "&str" => format!("[u8; {}]", param_default.len() + 1),
+            "CopyString" => format!("[u8; {}]", param_default.len() + 1),
             _ => param_type.clone(),
         };
         let param_default = match param_type.as_ref() {
-            "&str" => format!("*b\"{}\0\"", param_default),
+            "CopyString" => format!("*b\"{}\0\"", param_default),
             _ => param_default,
         };
         let read_func = match param_type.as_ref() {
-            "&str" => format!(
+            "CopyString" => format!(
                 "
                     fn read(&self) -> Result<&str, core::str::Utf8Error> {{
                         unsafe {{
@@ -306,7 +307,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
             ),
         };
         let kparam_ptr = match param_type.as_ref() {
-            "&str" => format!(
+            "CopyString" => format!(
                 "
                     __bindgen_anon_1: kernel::bindings::kernel_param__bindgen_ty_1 {{
                         str_: &kernel::bindings::kparam_string {{

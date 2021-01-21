@@ -22,7 +22,7 @@ module! {
             permissions: 0o644,
             description: b"Example of i32",
         },
-        my_str: &str {
+        my_str: CopyString {
             default: "default str val",
             permissions: 0o644,
             description: b"Example of a string param",
