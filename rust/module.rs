@@ -244,6 +244,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
         let param_default = match param_type.as_ref() {
             "bool" => get_ident(&mut param_it, "default"),
             "CopyString" => get_string(&mut param_it, "default"),
+            "str" => get_string(&mut param_it, "default"),
             _ => get_literal(&mut param_it, "default"),
         };
         let param_permissions = get_literal(&mut param_it, "permissions");
@@ -256,6 +257,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
             "bool" => "bool",
             "i32" => "int",
             "CopyString" => "string",
+            "str" => "charp",
             t => panic!("Unrecognized type {}", t),
         };
 
@@ -272,11 +274,13 @@ pub fn module(ts: TokenStream) -> TokenStream {
             &param_description,
         ));
         let param_type_internal = match param_type.as_ref() {
-            "CopyString" => format!("[u8; {}]", param_default.len() + 1),
+            "CopyString"  => format!("[u8; {}]", param_default.len() + 1),
+             "str" => "*mut u8".to_string(),
             _ => param_type.clone(),
         };
         let param_default = match param_type.as_ref() {
             "CopyString" => format!("*b\"{}\0\"", param_default),
+            "str" => format!("unsafe {{ b\"{}\0\" as *const u8 as *mut u8 }}", param_default),
             _ => param_default,
         };
         let read_func = match param_type.as_ref() {
@@ -289,6 +293,21 @@ pub fn module(ts: TokenStream) -> TokenStream {
                                 .position(|&b| b == b'\0')
                                 .unwrap();
                             core::str::from_utf8(&__{name}_{param_name}_value[0..nul])
+                        }}
+                    }}
+                ",
+                name = name,
+                param_name = param_name,
+            ),
+            "str" => format!(
+                "
+                    fn read(&self) -> Result<&str, core::str::Utf8Error> {{
+                        unsafe {{
+                            let mut count = 0;
+                            while *__{name}_{param_name}_value.add(count) != b'\0' {{
+                                count += 1;
+                            }}
+                            core::str::from_utf8(&core::slice::from_raw_parts(__{name}_{param_name}_value, count))
                         }}
                     }}
                 ",
