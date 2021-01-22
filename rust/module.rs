@@ -198,11 +198,11 @@ fn build_modinfo_string_param(module: &str, field: &str, param: &str, content: &
 /// }
 /// 
 /// ## Suported Parameter Types
-/// | Type         | `read(&self)` return type            |
-/// | ------------ | ------------------------------------ | 
-/// | `i32`        | `i32`                                |
-/// | `bool`       | `bool`                               |
-/// | `CopyString` | `Result<&str, core::str::Utf8Error>` |
+/// | Type   | `read(&self)` return type            |
+/// | ------ | ------------------------------------ | 
+/// | `i32`  | `i32`                                |
+/// | `bool` | `bool`                               |
+/// | `str`  | `Result<&str, core::str::Utf8Error>` |
 /// 
 /// For `CopyString` the parameter is copied into the buffer of the default value and
 /// cannot be longer than the default value.
@@ -243,7 +243,6 @@ pub fn module(ts: TokenStream) -> TokenStream {
         let mut param_it = group.stream().into_iter();
         let param_default = match param_type.as_ref() {
             "bool" => get_ident(&mut param_it, "default"),
-            "CopyString" => get_string(&mut param_it, "default"),
             "str" => get_string(&mut param_it, "default"),
             _ => get_literal(&mut param_it, "default"),
         };
@@ -256,7 +255,6 @@ pub fn module(ts: TokenStream) -> TokenStream {
         let param_kernel_type = match param_type.as_ref() {
             "bool" => "bool",
             "i32" => "int",
-            "CopyString" => "string",
             "str" => "charp",
             t => panic!("Unrecognized type {}", t),
         };
@@ -274,31 +272,14 @@ pub fn module(ts: TokenStream) -> TokenStream {
             &param_description,
         ));
         let param_type_internal = match param_type.as_ref() {
-            "CopyString"  => format!("[u8; {}]", param_default.len() + 1),
-             "str" => "*mut u8".to_string(),
+            "str" => "*mut u8".to_string(),
             _ => param_type.clone(),
         };
         let param_default = match param_type.as_ref() {
-            "CopyString" => format!("*b\"{}\0\"", param_default),
-            "str" => format!("unsafe {{ b\"{}\0\" as *const u8 as *mut u8 }}", param_default),
+            "str" => format!("b\"{}\0\" as *const u8 as *mut u8", param_default),
             _ => param_default,
         };
         let read_func = match param_type.as_ref() {
-            "CopyString" => format!(
-                "
-                    fn read(&self) -> Result<&str, core::str::Utf8Error> {{
-                        unsafe {{
-                            let nul = __{name}_{param_name}_value
-                                .iter()
-                                .position(|&b| b == b'\0')
-                                .unwrap();
-                            core::str::from_utf8(&__{name}_{param_name}_value[0..nul])
-                        }}
-                    }}
-                ",
-                name = name,
-                param_name = param_name,
-            ),
             "str" => format!(
                 "
                     fn read(&self) -> Result<&str, core::str::Utf8Error> {{
@@ -325,30 +306,15 @@ pub fn module(ts: TokenStream) -> TokenStream {
                 param_type = param_type,
             ),
         };
-        let kparam_ptr = match param_type.as_ref() {
-            "CopyString" => format!(
-                "
-                    __bindgen_anon_1: kernel::bindings::kernel_param__bindgen_ty_1 {{
-                        str_: &kernel::bindings::kparam_string {{
-                            maxlen: unsafe {{ __{name}_{param_name}_value.len() }} as u32 + 1,
-                            string: unsafe {{ (&__{name}_{param_name}_value).as_ptr() }}
-                                as *mut kernel::c_types::c_char,
-                        }} as *const _,
-                    }},
-                ",
-                name = name,
-                param_name = param_name,
-            ),
-            _ => format!(
-                "
-                    __bindgen_anon_1: kernel::bindings::kernel_param__bindgen_ty_1 {{
-                        arg: unsafe {{ &__{name}_{param_name}_value }} as *const _ as *mut kernel::c_types::c_void,
-                    }},
-                ",
-                name = name,
-                param_name = param_name,
-            ),
-        };
+        let kparam = format!(
+            "
+                kernel::bindings::kernel_param__bindgen_ty_1 {{
+                    arg: unsafe {{ &__{name}_{param_name}_value }} as *const _ as *mut kernel::c_types::c_void,
+                }},
+            ",
+            name = name,
+            param_name = param_name,
+        );
         params_modinfo.push_str(
             &format!(
                 "
@@ -389,7 +355,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
                     perm: {permissions},
                     level: -1,
                     flags: 0,
-                    {kparam_ptr}
+                    __bindgen_anon_1: {kparam}
                 }});
                 ",
                 name = name,
@@ -399,7 +365,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
                 param_default = param_default,
                 param_name = param_name,
                 permissions = param_permissions,
-                kparam_ptr = kparam_ptr,
+                kparam = kparam,
             )
         );
     }
