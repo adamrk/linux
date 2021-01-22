@@ -76,15 +76,6 @@ fn get_byte_string(it: &mut token_stream::IntoIter, expected_name: &str) -> Stri
     byte_string[2..byte_string.len() - 1].to_string()
 }
 
-fn get_string(it: &mut token_stream::IntoIter, expected_name: &str) -> String {
-    let string = get_literal(it, expected_name);
-
-    assert!(string.starts_with("\""));
-    assert!(string.ends_with("\""));
-
-    string[1..string.len() - 1].to_string()
-}
-
 fn __build_modinfo_string_base(
     module: &str,
     field: &str,
@@ -192,20 +183,16 @@ fn build_modinfo_string_param(module: &str, field: &str, param: &str, content: &
 ///
 /// impl KernelModule for MyKernelModule {
 ///     fn init() -> KernelResult<Self> {
-///         println!("bool param is:  {}", my_bool.read());
+///         println!("i32 param is:  {}", my_i32.read());
 ///         Ok(MyKernelModule)
 ///     }
 /// }
 /// 
 /// ## Suported Parameter Types
-/// | Type   | `read(&self)` return type            |
-/// | ------ | ------------------------------------ | 
-/// | `i32`  | `i32`                                |
-/// | `bool` | `bool`                               |
-/// | `str`  | `Result<&str, core::str::Utf8Error>` |
-/// 
-/// For `CopyString` the parameter is copied into the buffer of the default value and
-/// cannot be longer than the default value.
+///
+/// - `i32`
+/// - `bool`
+/// - `str` - Corresponds to C `charp` param type. `read` signature is `read(&self) -> Result<&str, core::str::Utf8Error>`.
 /// ```
 #[proc_macro]
 pub fn module(ts: TokenStream) -> TokenStream {
@@ -243,7 +230,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
         let mut param_it = group.stream().into_iter();
         let param_default = match param_type.as_ref() {
             "bool" => get_ident(&mut param_it, "default"),
-            "str" => get_string(&mut param_it, "default"),
+            "str" => get_byte_string(&mut param_it, "default"),
             _ => get_literal(&mut param_it, "default"),
         };
         let param_permissions = get_literal(&mut param_it, "permissions");

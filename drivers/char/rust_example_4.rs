@@ -23,7 +23,7 @@ module! {
             description: b"Example of i32",
         },
         my_str: str {
-            default: "default str val",
+            default: b"default str val",
             permissions: 0o644,
             description: b"Example of a string param",
         },
