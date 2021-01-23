@@ -229,7 +229,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
 
         let mut param_it = group.stream().into_iter();
         let param_default = match param_type.as_ref() {
-            "bool" => get_ident(&mut param_it, "default"),
+            "bool" | "invbool" => get_ident(&mut param_it, "default"),
             "str" => get_byte_string(&mut param_it, "default"),
             _ => get_literal(&mut param_it, "default"),
         };
@@ -241,7 +241,13 @@ pub fn module(ts: TokenStream) -> TokenStream {
         // TODO: other kinds: arrays, unsafes, etc.
         let param_kernel_type = match param_type.as_ref() {
             "bool" => "bool",
+            "u8" => "char",
+            "i16" => "short",
+            "u16" => "ushort",
             "i32" => "int",
+            "u32" => "uint",
+            "u64" => "ullong",
+            "invbool" => "invbool",
             "str" => "charp",
             t => panic!("Unrecognized type {}", t),
         };
@@ -259,8 +265,9 @@ pub fn module(ts: TokenStream) -> TokenStream {
             &param_description,
         ));
         let param_type_internal = match param_type.as_ref() {
-            "str" => "*mut u8".to_string(),
-            _ => param_type.clone(),
+            "str" => "*mut u8",
+            "invbool" => "bool",
+            _ => &param_type,
         };
         let param_default = match param_type.as_ref() {
             "str" => format!("b\"{}\0\" as *const u8 as *mut u8", param_default),
@@ -277,6 +284,15 @@ pub fn module(ts: TokenStream) -> TokenStream {
                             }}
                             core::str::from_utf8(&core::slice::from_raw_parts(__{name}_{param_name}_value, count))
                         }}
+                    }}
+                ",
+                name = name,
+                param_name = param_name,
+            ),
+            "invbool" => format!(
+                "
+                    fn read(&self) -> bool {{
+                        unsafe {{ __{name}_{param_name}_value }}
                     }}
                 ",
                 name = name,

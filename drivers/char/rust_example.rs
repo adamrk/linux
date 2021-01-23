@@ -30,6 +30,11 @@ module! {
             permissions: 0o644,
             description: b"Example of a string param",
         },
+        my_invbool: invbool {
+            default: true,
+            permissions: 0o644,
+            description: b"Example of an inverted bool",
+        },
     },
 }
 
@@ -54,12 +59,13 @@ impl KernelModule for RustExample {
         println!("Rust Example (init)");
         println!("Am I built-in? {}", !cfg!(MODULE));
         println!("Parameters:");
-        println!("  my_bool:  {}", my_bool.read());
-        println!("  my_i32:   {}", my_i32.read());
+        println!("  my_bool:    {}", my_bool.read());
+        println!("  my_i32:     {}", my_i32.read());
         println!(
-            "  my_str:   {}",
+            "  my_str:     {}",
             my_str.read().expect("Expected valid UTF8 parameter")
         );
+        println!("  my_invbool: {}", my_invbool.read());
 
         Ok(RustExample {
             message: "on the heap!".to_owned(),
