@@ -187,13 +187,19 @@ fn build_modinfo_string_param(module: &str, field: &str, param: &str, content: &
 ///         Ok(MyKernelModule)
 ///     }
 /// }
+/// ```
 /// 
 /// ## Suported Parameter Types
 ///
-/// - `i32`
-/// - `bool`
-/// - `str` - Corresponds to C `charp` param type. `read` signature is `read(&self) -> Result<&str, core::str::Utf8Error>`.
-/// ```
+/// - `bool`    - Corresponds to C `bool` param type.
+/// - `u8`      - Corresponds to C `char` param type.
+/// - `i16`     - Corresponds to C `short` param type.
+/// - `u16`     - Corresponds to C `ushort` param type.
+/// - `i32`     - Corresponds to C `int` param type.
+/// - `u32`     - Corresponds to C `uint` param type.
+/// - `u64`     - Corresponds to C `ullong` param type.
+/// - `invbool` - Corresponds to C `invbool` param type. Value is inverse of user input.
+/// - `str`     - Corresponds to C `charp` param type. `read` signature is `read(&self) -> Result<&str, core::str::Utf8Error>`.
 #[proc_macro]
 pub fn module(ts: TokenStream) -> TokenStream {
     let mut it = ts.into_iter();
