@@ -9,7 +9,6 @@ jobs:
     timeout-minutes: 20
 
     strategy:
-      fail-fast: false
       matrix:
         arch: [x86_64, arm64]
         toolchain: [gcc, clang, llvm]

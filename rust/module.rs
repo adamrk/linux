@@ -5,7 +5,7 @@
 use proc_macro::{token_stream, Delimiter, Group, TokenStream, TokenTree};
 
 fn expect_ident(it: &mut token_stream::IntoIter) -> String {
-    if let TokenTree::Ident(ident) = it.next().expect("Expected Ident") {
+    if let TokenTree::Ident(ident) = it.next().unwrap() {
         ident.to_string()
     } else {
         panic!("Expected Ident");
@@ -13,7 +13,7 @@ fn expect_ident(it: &mut token_stream::IntoIter) -> String {
 }
 
 fn expect_punct(it: &mut token_stream::IntoIter) -> char {
-    if let TokenTree::Punct(punct) = it.next().expect("Expected Punct") {
+    if let TokenTree::Punct(punct) = it.next().unwrap() {
         punct.as_char()
     } else {
         panic!("Expected Punct");
@@ -21,7 +21,7 @@ fn expect_punct(it: &mut token_stream::IntoIter) -> char {
 }
 
 fn expect_literal(it: &mut token_stream::IntoIter) -> String {
-    if let TokenTree::Literal(literal) = it.next().expect("Expected Literal") {
+    if let TokenTree::Literal(literal) = it.next().unwrap() {
         literal.to_string()
     } else {
         panic!("Expected Literal");
@@ -29,7 +29,7 @@ fn expect_literal(it: &mut token_stream::IntoIter) -> String {
 }
 
 fn expect_group(it: &mut token_stream::IntoIter) -> Group {
-    if let TokenTree::Group(group) = it.next().expect("Expected Group") {
+    if let TokenTree::Group(group) = it.next().unwrap() {
         group
     } else {
         panic!("Expected Group");
@@ -295,24 +295,15 @@ pub fn module(ts: TokenStream) -> TokenStream {
                 name = name,
                 param_name = param_name,
             ),
-            "invbool" => format!(
-                "
-                    fn read(&self) -> bool {{
-                        unsafe {{ __{name}_{param_name}_value }}
-                    }}
-                ",
-                name = name,
-                param_name = param_name,
-            ),
             _ => format!(
                 "
-                    fn read(&self) -> {param_type} {{
+                    fn read(&self) -> {param_type_internal} {{
                         unsafe {{ __{name}_{param_name}_value }}
                     }}
                 ",
                 name = name,
                 param_name = param_name,
-                param_type = param_type,
+                param_type_internal = param_type_internal,
             ),
         };
         let kparam = format!(
@@ -466,5 +457,5 @@ pub fn module(ts: TokenStream) -> TokenStream {
         file = &build_modinfo_string_only_builtin(&name, "file", &file),
         params_modinfo = params_modinfo,
         initcall_section = ".initcall6.init"
-    ).parse().expect("Expected parsed token stream")
+    ).parse().unwrap()
 }
