@@ -1,7 +1,6 @@
 on:
   pull_request: {}
   push:
-    branches: [rust]
 
 jobs:
   ci:
@@ -13,13 +12,13 @@ jobs:
         arch: [x86_64, arm64]
         toolchain: [gcc, clang, llvm]
         config: [debug, release]
-        rustc: [nightly-2021-01-02]
+        rustc: [nightly-2021-01-20]
         output: [src]
         include:
           - arch: x86_64
             toolchain: llvm
             config: release
-            rustc: nightly-2021-01-02
+            rustc: nightly-2021-01-20
             output: build
 
     steps:
