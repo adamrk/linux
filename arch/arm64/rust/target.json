@@ -25,7 +25,9 @@
   },
   "relocation-model": "static",
   "relro-level": "full",
-  "stack-probes": true,
+  "stack-probes": {
+    "kind": "inline"
+  },
   "target-c-int-width": "32",
   "target-endian": "little",
   "target-pointer-width": "64",
