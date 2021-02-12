@@ -221,12 +221,16 @@ fn permissions_are_readonly(perms: &str) -> bool {
 /// # Supported Parameter Types
 ///
 /// - `bool`    - Corresponds to C `bool` param type.
+/// - `i8`      - No equivalent C param type.
 /// - `u8`      - Corresponds to C `char` param type.
 /// - `i16`     - Corresponds to C `short` param type.
 /// - `u16`     - Corresponds to C `ushort` param type.
 /// - `i32`     - Corresponds to C `int` param type.
 /// - `u32`     - Corresponds to C `uint` param type.
+/// - `i64`     - No equivalent C param type.
 /// - `u64`     - Corresponds to C `ullong` param type.
+/// - `isize`   - No equivalent C param type.
+/// - `usize`   - No equivalent C param type.
 /// - `str`     - Corresponds to C `charp` param type.
 ///               Reading the param returns a `&[u8]`.
 ///
@@ -277,15 +281,19 @@ pub fn module(ts: TokenStream) -> TokenStream {
 
         // TODO: more primitive types
         // TODO: other kinds: arrays, unsafes, etc.
-        let param_kernel_type = match param_type.as_ref() {
-            "bool" => "bool",
-            "u8" => "char",
-            "i16" => "short",
-            "u16" => "ushort",
-            "i32" => "int",
-            "u32" => "uint",
-            "u64" => "ullong",
-            "str" => "charp",
+        let (param_kernel_type, ops) = match param_type.as_ref() {
+            "bool" => ("bool", "kernel::bindings::param_ops_bool"),
+            "i8" => ("i8", "kernel::module_param::PARAM_OPS_I8"),
+            "u8" => ("u8", "kernel::bindings::param_ops_char"),
+            "i16" => ("i16", "kernel::bindings::param_ops_short"),
+            "u16" => ("u16", "kernel::bindings::param_ops_ushort"),
+            "i32" => ("i32", "kernel::bindings::param_ops_int"),
+            "u32" => ("u32", "kernel::bindings::param_ops_uint"),
+            "i64" => ("i64", "kernel::module_param::PARAM_OPS_I64"),
+            "u64" => ("u64", "kernel::bindings::param_ops_ullong"),
+            "isize" => ("isize", "kernel::module_param::PARAM_OPS_ISIZE"),
+            "usize" => ("usize", "kernel::module_param::PARAM_OPS_USIZE"),
+            "str" => ("charp", "kernel::bindings::param_ops_charp"),
             t => panic!("Unrecognized type {}", t),
         };
 
@@ -409,7 +417,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
                     mod_: unsafe {{ &kernel::bindings::__this_module as *const _ as *mut _ }},
                     #[cfg(not(MODULE))]
                     mod_: core::ptr::null_mut(),
-                    ops: unsafe {{ &kernel::bindings::param_ops_{param_kernel_type} }} as *const kernel::bindings::kernel_param_ops,
+                    ops: unsafe {{ &{ops} }} as *const kernel::bindings::kernel_param_ops,
                     perm: {permissions},
                     level: -1,
                     flags: 0,
@@ -419,9 +427,9 @@ pub fn module(ts: TokenStream) -> TokenStream {
                 name = name,
                 param_type_internal = param_type_internal,
                 read_func = read_func,
-                param_kernel_type = param_kernel_type,
                 param_default = param_default,
                 param_name = param_name,
+                ops = ops,
                 permissions = param_permissions,
                 kparam = kparam,
             )

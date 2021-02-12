@@ -14,11 +14,13 @@ use core::panic::PanicInfo;
 
 mod allocator;
 pub mod bindings;
+mod buffer;
 pub mod c_types;
 pub mod chrdev;
 mod error;
 pub mod file_operations;
 pub mod miscdev;
+pub mod module_param;
 pub mod prelude;
 pub mod printk;
 pub mod random;
@@ -31,6 +33,8 @@ pub mod user_ptr;
 
 pub use crate::error::{Error, KernelResult};
 pub use crate::types::{CStr, Mode};
+
+pub const PAGE_SIZE: usize = 1 << bindings::PAGE_SHIFT;
 
 /// KernelModule is the top level entrypoint to implementing a kernel module. Your kernel module
 /// should implement the `init` method on it, which maps to the `module_init` macro in Linux C API.
