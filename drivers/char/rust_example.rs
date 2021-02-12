@@ -31,6 +31,11 @@ module! {
             permissions: 0o644,
             description: b"Example of a string param",
         },
+        my_usize: usize {
+            default: 42,
+            permissions: 0o644,
+            description: b"Example of usize",
+        },
     },
 }
 
@@ -63,6 +68,7 @@ impl KernelModule for RustExample {
                 "  my_str:     {}",
                 core::str::from_utf8(my_str.read(&lock))?
             );
+            println!("  my_usize:   {}", my_usize.read(&lock));
         }
 
         // Including this large variable on the stack will trigger
