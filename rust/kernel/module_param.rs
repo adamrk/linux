@@ -300,3 +300,64 @@ make_param_ops!(
     PARAM_OPS_BOOL,
     bool
 );
+
+struct ArrayParam<T, const N: usize> {
+    values: [core::mem::MaybeUninit<T>; N],
+    used: usize
+}
+
+impl<T, const N: usize> ArrayParam<T, { N }> {
+    const fn new() -> Self {
+        ArrayParam {
+            values: [core::mem::MaybeUninit::uninit(); N],
+            used: 0
+        }
+    }
+
+    const fn push(&mut self, val: T) {
+        if self.used < N {
+            self.values[self.used] = core::mem::MaybeUninit::new(val);
+            self.used += 1;
+        }
+    }
+
+    const fn set(&mut self, vals: &[T]) {
+        self.used = 0;
+        let mut inx = 0;
+        while inx < vals.len() {
+            self.push(vals[inx]);
+            inx += 1;
+        }
+    }
+
+    fn values<'a>(&'a self) -> impl core::iter::Iterator<Item=&'a T> + 'a {
+        unsafe {
+            self.values[0..self.used].iter().map(|val| val.assume_init_ref())
+        }
+    }
+}
+
+impl<T: core::fmt::Display, const N: usize> core::fmt::Display for ArrayParam<T, { N }> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        for val in self.values() {
+            write!(f, "{},", val)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T: core::fmt::Display + ModuleParam, const N: usize> ModuleParam for ArrayParam<T, { N }> {
+    const NOARG_ALLOWED = false;
+
+    fn try_from_param_arg(arg: Option<&[u8])>) -> Option<Self> {
+        if let Some(args) = arg {
+            for arg in args.split(|b| b = b',') {
+                let val = T::try_from_param_arg(arg)?;
+
+
+            }
+        }
+
+    }
+
+}
