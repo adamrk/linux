@@ -43,6 +43,34 @@ fn expect_group(it: &mut token_stream::IntoIter) -> Group {
     }
 }
 
+#[derive(Clone, PartialEq)]
+enum ParamType {
+    Ident(String),
+    Array {
+        vals: String,
+        max_length: String,
+    }
+}
+
+fn expect_array_type(it: &mut token_stream::IntoIter) -> ParamType {
+    let vals = expect_ident(it);
+    assert_eq!(expect_punct(it), ';');
+    let max_length = expect_literal(it);
+    ParamType::Array { vals, max_length }
+}
+
+fn expect_type(it: &mut token_stream::IntoIter) -> ParamType {
+    match it.next().unwrap() {
+        TokenTree::Ident(ident) => ParamType::Ident(ident.to_string()),
+        TokenTree::Group(group) => {
+            assert_eq!(group.delimiter(), Delimiter::Bracket);
+            let mut it = group.stream().into_iter();
+            expect_array_type(&mut it)
+        }
+        _ => panic!("Expected Param Type")
+    }
+}
+
 fn expect_end(it: &mut token_stream::IntoIter) {
     if it.next().is_some() {
         panic!("Expected end");
@@ -177,6 +205,31 @@ fn permissions_are_readonly(perms: &str) -> bool {
     }
 }
 
+fn param_ops_path(param_type: &str) -> &'static str {
+    match param_type {
+        "bool" => "kernel::module_param::PARAM_OPS_BOOL",
+        "i8" => "kernel::module_param::PARAM_OPS_I8",
+        "u8" => "kernel::module_param::PARAM_OPS_U8",
+        "i16" => "kernel::module_param::PARAM_OPS_I16",
+        "u16" => "kernel::module_param::PARAM_OPS_U16",
+        "i32" => "kernel::module_param::PARAM_OPS_I32",
+        "u32" => "kernel::module_param::PARAM_OPS_U32",
+        "i64" => "kernel::module_param::PARAM_OPS_I64",
+        "u64" => "kernel::module_param::PARAM_OPS_U64",
+        "isize" => "kernel::module_param::PARAM_OPS_ISIZE",
+        "usize" => "kernel::module_param::PARAM_OPS_USIZE",
+        "str" => "kernel::bindings::param_ops_charp",
+        t => panic!("Unrecognized type {}", t)
+    }
+}
+
+fn kernel_type(param_type: &str) -> String {
+    match param_type {
+        "str" => "charp".to_string(),
+        other => other.to_string(),
+    }
+}
+
 /// Declares a kernel module.
 ///
 /// The `type` argument should be a type which implements the [`KernelModule`]
@@ -264,6 +317,8 @@ pub fn module(ts: TokenStream) -> TokenStream {
 
     let mut params_modinfo = String::new();
 
+    let mut array_types_to_generate = Vec::new();
+
     loop {
         let param_name = match it.next() {
             Some(TokenTree::Ident(ident)) => ident.to_string(),
@@ -272,17 +327,20 @@ pub fn module(ts: TokenStream) -> TokenStream {
         };
 
         assert_eq!(expect_punct(&mut it), ':');
-        let param_type = expect_ident(&mut it);
+        let param_type = expect_type(&mut it);
         let group = expect_group(&mut it);
         assert_eq!(expect_punct(&mut it), ',');
 
         assert_eq!(group.delimiter(), Delimiter::Brace);
 
         let mut param_it = group.stream().into_iter();
-        let param_default = match param_type.as_ref() {
-            "bool" => get_ident(&mut param_it, "default"),
-            "str" => get_byte_string(&mut param_it, "default"),
-            _ => get_literal(&mut param_it, "default"),
+        let param_default = match param_type {
+            ParamType::Ident(param_type) => match param_type.as_ref() {
+                "bool" => get_ident(&mut param_it, "default"),
+                "str" => get_byte_string(&mut param_it, "default"),
+                _ => get_literal(&mut param_it, "default"),
+            }
+            ParamType::Array{..} => get_group(&mut param_it, "default").to_string(),
         };
         let param_permissions = get_literal(&mut param_it, "permissions");
         let param_description = get_byte_string(&mut param_it, "description");
@@ -290,20 +348,12 @@ pub fn module(ts: TokenStream) -> TokenStream {
 
         // TODO: more primitive types
         // TODO: other kinds: arrays, unsafes, etc.
-        let (param_kernel_type, ops) = match param_type.as_ref() {
-            "bool" => ("bool", "kernel::module_param::PARAM_OPS_BOOL"),
-            "i8" => ("i8", "kernel::module_param::PARAM_OPS_I8"),
-            "u8" => ("u8", "kernel::module_param::PARAM_OPS_U8"),
-            "i16" => ("i16", "kernel::module_param::PARAM_OPS_I16"),
-            "u16" => ("u16", "kernel::module_param::PARAM_OPS_U16"),
-            "i32" => ("i32", "kernel::module_param::PARAM_OPS_I32"),
-            "u32" => ("u32", "kernel::module_param::PARAM_OPS_U32"),
-            "i64" => ("i64", "kernel::module_param::PARAM_OPS_I64"),
-            "u64" => ("u64", "kernel::module_param::PARAM_OPS_U64"),
-            "isize" => ("isize", "kernel::module_param::PARAM_OPS_ISIZE"),
-            "usize" => ("usize", "kernel::module_param::PARAM_OPS_USIZE"),
-            "str" => ("charp", "kernel::bindings::param_ops_charp"),
-            t => panic!("Unrecognized type {}", t),
+        let (param_kernel_type, ops): (String, _) = match param_type {
+            ParamType::Ident(param_type) => (kernel_type(&param_type), param_ops_path(&param_type)),
+            array_type @ ParamType::Array{ vals, max_length } => {
+                array_types_to_generate.push(array_type);
+                (format!("rust_array_{}_{}", vals, max_length), generated_array_ops_name(array_type))
+            }
         };
 
         params_modinfo.push_str(&build_modinfo_string_param(
