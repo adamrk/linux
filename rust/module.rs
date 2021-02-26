@@ -368,16 +368,29 @@ pub fn module(ts: TokenStream) -> TokenStream {
             &param_name,
             &param_description,
         ));
-        let param_type_internal = match param_type.as_ref() {
-            "str" => "*mut kernel::c_types::c_char",
-            _ => &param_type,
-        };
-        let param_default = match param_type.as_ref() {
-            "str" => format!(
-                "b\"{}\0\" as *const _ as *mut kernel::c_types::c_char",
-                param_default
+        let param_type_internal = match param_type {
+            ParamType::Ident(param_type) => match param_type.as_ref() {
+                "str" => "*mut kernel::c_types::c_char".to_string(),
+                other => other.to_string(),
+            }
+            ParamType::Array { vals, max_length } => format!(
+                "kernel::module_param::ArrayParam<{vals}, {max_length}>",
+                vals = vals,
+                max_length = max_length
             ),
-            _ => param_default,
+        };
+        let param_default = match param_type {
+            ParamType::Ident(param_type) => match param_type.as_ref() {
+                "str" => format!(
+                    "b\"{}\0\" as *const _ as *mut kernel::c_types::c_char",
+                    param_default
+                ),
+                _ => param_default,
+            }
+            ParamType::Array { vals, max_length } => format!(
+                "kernel::module_param::ArrayParam<{vals}, {max_length}>::"
+
+            ),
         };
         let read_func = match (param_type.as_ref(), permissions_are_readonly(&param_permissions)) {
             ("str", false) => format!(
