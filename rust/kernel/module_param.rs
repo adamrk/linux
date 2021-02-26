@@ -307,6 +307,14 @@ struct ArrayParam<T, const N: usize> {
 }
 
 impl<T, const N: usize> ArrayParam<T, { N }> {
+    fn values<'a>(&'a self) -> impl core::iter::Iterator<Item=&'a T> + 'a {
+        unsafe {
+            self.values[0..self.used].iter().map(|val| val.assume_init_ref())
+        }
+    }
+}
+
+impl<T: Copy, const N: usize> ArrayParam<T, { N }> {
     const fn new() -> Self {
         ArrayParam {
             values: [core::mem::MaybeUninit::uninit(); N],
@@ -320,21 +328,6 @@ impl<T, const N: usize> ArrayParam<T, { N }> {
             self.used += 1;
         }
     }
-
-    const fn set(&mut self, vals: &[T]) {
-        self.used = 0;
-        let mut inx = 0;
-        while inx < vals.len() {
-            self.push(vals[inx]);
-            inx += 1;
-        }
-    }
-
-    fn values<'a>(&'a self) -> impl core::iter::Iterator<Item=&'a T> + 'a {
-        unsafe {
-            self.values[0..self.used].iter().map(|val| val.assume_init_ref())
-        }
-    }
 }
 
 impl<T: core::fmt::Display, const N: usize> core::fmt::Display for ArrayParam<T, { N }> {
@@ -346,18 +339,16 @@ impl<T: core::fmt::Display, const N: usize> core::fmt::Display for ArrayParam<T,
     }
 }
 
-impl<T: core::fmt::Display + ModuleParam, const N: usize> ModuleParam for ArrayParam<T, { N }> {
-    const NOARG_ALLOWED = false;
+impl<T: Copy + core::fmt::Display + ModuleParam, const N: usize> ModuleParam for ArrayParam<T, { N }> {
+    const NOARG_ALLOWED: bool = false;
 
-    fn try_from_param_arg(arg: Option<&[u8])>) -> Option<Self> {
-        if let Some(args) = arg {
-            for arg in args.split(|b| b = b',') {
-                let val = T::try_from_param_arg(arg)?;
-
-
+    fn try_from_param_arg(arg: Option<&[u8]>) -> Option<Self> {
+        arg.and_then(|args| {
+            let mut result = Self::new();
+            for arg in args.split(|b| *b == b',') {
+                result.push(T::try_from_param_arg(Some(arg))?);
             }
-        }
-
+            Some(result)
+        })
     }
-
 }
