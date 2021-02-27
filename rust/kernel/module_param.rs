@@ -301,9 +301,9 @@ make_param_ops!(
     bool
 );
 
-struct ArrayParam<T, const N: usize> {
-    values: [core::mem::MaybeUninit<T>; N],
-    used: usize
+pub struct ArrayParam<T, const N: usize> {
+    pub values: [core::mem::MaybeUninit<T>; N],
+    pub used: usize
 }
 
 impl<T, const N: usize> ArrayParam<T, { N }> {

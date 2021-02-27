@@ -11,12 +11,34 @@
 
 use proc_macro::{token_stream, Delimiter, Group, TokenStream, TokenTree};
 
-fn expect_ident(it: &mut token_stream::IntoIter) -> String {
-    if let TokenTree::Ident(ident) = it.next().unwrap() {
-        ident.to_string()
+fn try_ident(it: &mut token_stream::IntoIter) -> Option<String> {
+    if let Some(TokenTree::Ident(ident)) = it.next() {
+        Some(ident.to_string())
     } else {
-        panic!("Expected Ident");
+        None
     }
+}
+
+fn try_literal(it: &mut token_stream::IntoIter) -> Option<String> {
+    if let Some(TokenTree::Literal(literal)) = it.next() {
+        Some(literal.to_string())
+    } else {
+        None
+    }
+}
+
+fn try_byte_string(it: &mut token_stream::IntoIter) -> Option<String> {
+    try_literal(it).and_then(|byte_string| {
+        if !(byte_string.starts_with("b\"") && byte_string.ends_with('\"')) {
+            None
+        } else {
+            Some(byte_string[2..byte_string.len() - 1].to_string())
+        }
+    })
+}
+
+fn expect_ident(it: &mut token_stream::IntoIter) -> String {
+    try_ident(it).expect("Expected Ident")
 }
 
 fn expect_punct(it: &mut token_stream::IntoIter) -> char {
@@ -28,11 +50,7 @@ fn expect_punct(it: &mut token_stream::IntoIter) -> char {
 }
 
 fn expect_literal(it: &mut token_stream::IntoIter) -> String {
-    if let TokenTree::Literal(literal) = it.next().unwrap() {
-        literal.to_string()
-    } else {
-        panic!("Expected Literal");
-    }
+    try_literal(it).expect("Expected Literal")
 }
 
 fn expect_group(it: &mut token_stream::IntoIter) -> Group {
@@ -43,19 +61,24 @@ fn expect_group(it: &mut token_stream::IntoIter) -> Group {
     }
 }
 
+fn expect_byte_string(it: &mut token_stream::IntoIter) -> String {
+    try_byte_string(it).expect("Expected byte string")
+}
+
 #[derive(Clone, PartialEq)]
 enum ParamType {
     Ident(String),
     Array {
         vals: String,
-        max_length: String,
+        max_length: usize,
     }
 }
 
 fn expect_array_type(it: &mut token_stream::IntoIter) -> ParamType {
     let vals = expect_ident(it);
     assert_eq!(expect_punct(it), ';');
-    let max_length = expect_literal(it);
+    let max_length_str = expect_literal(it);
+    let max_length = max_length_str.parse::<usize>().expect("Expected usize length");
     ParamType::Array { vals, max_length }
 }
 
@@ -102,12 +125,11 @@ fn get_group(it: &mut token_stream::IntoIter, expected_name: &str) -> Group {
 }
 
 fn get_byte_string(it: &mut token_stream::IntoIter, expected_name: &str) -> String {
-    let byte_string = get_literal(it, expected_name);
-
-    assert!(byte_string.starts_with("b\""));
-    assert!(byte_string.ends_with('\"'));
-
-    byte_string[2..byte_string.len() - 1].to_string()
+    assert_eq!(expect_ident(it), expected_name);
+    assert_eq!(expect_punct(it), ':');
+    let byte_string = expect_byte_string(it);
+    assert_eq!(expect_punct(it), ',');
+    byte_string
 }
 
 fn __build_modinfo_string_base(
@@ -230,6 +252,67 @@ fn kernel_type(param_type: &str) -> String {
     }
 }
 
+fn try_simple_param_val(param_type: &str) -> Box<dyn Fn(&mut token_stream::IntoIter) -> Option<String>> {
+    match param_type.as_ref() {
+        "bool" => Box::new(|param_it| try_ident(&mut param_it)),
+        "str" => Box::new(|param_it| try_byte_string(&mut param_it).map(|s| {
+            format!("b\"{}\0\" as *const _ as *mut kernel::c_types::c_char", s)
+        })),
+        _ => Box::new(|param_it| try_literal(&mut param_it)),
+    }
+}
+
+fn get_default(param_type: ParamType, param_it: &mut token_stream::IntoIter) -> String {
+    let try_param_val = match param_type {
+        ParamType::Ident(param_type)
+        | ParamType::Array { vals: param_type, max_length: _ } => {
+            try_simple_param_val(&param_type)
+        }
+    };
+    assert_eq!(expect_ident(param_it), "default");
+    assert_eq!(expect_punct(param_it), ':');
+    let default = match param_type {
+        ParamType::Ident(param_type) => try_param_val(param_it).expect("Expected default param value"),
+        ParamType::Array{ vals, max_length } => {
+            let group = expect_group(param_it);
+            assert_eq!(group.delimiter(), Delimiter::Bracket);
+            let mut default_vals = Vec::new();
+            let it = group.stream().into_iter();
+
+            while let Some(default_val) = try_param_val(&mut it) {
+                default_vals.push(default_val);
+                match it.next() {
+                    Some(TokenTree::Punct(punct)) => assert_eq!(punct.as_char(), ','),
+                    None => break,
+                    _ => panic!("Expected ',' or end of array default values"),
+                }
+            };
+
+            let uninit_count = max_length - default_vals.len();
+            let mut maybe_uninit_defaults = "[".to_string();
+            for val in default_vals {
+                maybe_uninit_defaults.push_str(&format!("core::mem::MaybeUninit::new({}),", val));
+            }
+            for _ in 0..uninit_count {
+                maybe_uninit_defaults.push_str("core::mem::MaybeUninit::uninit()");
+            }
+            maybe_uninit_defaults.push_str("]");
+            format!(
+                "
+                    kernel::module_param::ArrayParam {{
+                        values: {maybe_uninit_defaults},
+                        used: {used}, 
+                    }}
+                ",
+                maybe_uninit_defaults = maybe_uninit_defaults,
+                used = default_vals.len(),
+            )
+        }
+    };
+    assert_eq!(expect_punct(param_it), ',');
+    default
+}
+
 /// Declares a kernel module.
 ///
 /// The `type` argument should be a type which implements the [`KernelModule`]
@@ -334,14 +417,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
         assert_eq!(group.delimiter(), Delimiter::Brace);
 
         let mut param_it = group.stream().into_iter();
-        let param_default = match param_type {
-            ParamType::Ident(param_type) => match param_type.as_ref() {
-                "bool" => get_ident(&mut param_it, "default"),
-                "str" => get_byte_string(&mut param_it, "default"),
-                _ => get_literal(&mut param_it, "default"),
-            }
-            ParamType::Array{..} => get_group(&mut param_it, "default").to_string(),
-        };
+        let param_default = get_default(param_type, &mut param_it);
         let param_permissions = get_literal(&mut param_it, "permissions");
         let param_description = get_byte_string(&mut param_it, "description");
         expect_end(&mut param_it);
@@ -377,19 +453,6 @@ pub fn module(ts: TokenStream) -> TokenStream {
                 "kernel::module_param::ArrayParam<{vals}, {max_length}>",
                 vals = vals,
                 max_length = max_length
-            ),
-        };
-        let param_default = match param_type {
-            ParamType::Ident(param_type) => match param_type.as_ref() {
-                "str" => format!(
-                    "b\"{}\0\" as *const _ as *mut kernel::c_types::c_char",
-                    param_default
-                ),
-                _ => param_default,
-            }
-            ParamType::Array { vals, max_length } => format!(
-                "kernel::module_param::ArrayParam<{vals}, {max_length}>::"
-
             ),
         };
         let read_func = match (param_type.as_ref(), permissions_are_readonly(&param_permissions)) {
