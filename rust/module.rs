@@ -253,7 +253,7 @@ fn kernel_type(param_type: &str) -> String {
 }
 
 fn try_simple_param_val(param_type: &str) -> Box<dyn Fn(&mut token_stream::IntoIter) -> Option<String>> {
-    match param_type.as_ref() {
+    match param_type {
         "bool" => Box::new(|param_it| try_ident(param_it)),
         "str" => Box::new(|param_it| try_byte_string(param_it).map(|s| {
             format!("b\"{}\0\" as *const _ as *mut kernel::c_types::c_char", s)
@@ -272,8 +272,8 @@ fn get_default(param_type: &ParamType, param_it: &mut token_stream::IntoIter) ->
     assert_eq!(expect_ident(param_it), "default");
     assert_eq!(expect_punct(param_it), ':');
     let default = match param_type {
-        ParamType::Ident(param_type) => try_param_val(param_it).expect("Expected default param value"),
-        ParamType::Array{ vals, max_length } => {
+        ParamType::Ident(_) => try_param_val(param_it).expect("Expected default param value"),
+        ParamType::Array{ vals:_, max_length } => {
             let group = expect_group(param_it);
             assert_eq!(group.delimiter(), Delimiter::Bracket);
             let mut default_vals = Vec::new();
@@ -297,7 +297,7 @@ fn get_default(param_type: &ParamType, param_it: &mut token_stream::IntoIter) ->
             for _ in 0..uninit_count {
                 maybe_uninit_defaults.push_str("core::mem::MaybeUninit::uninit()");
             }
-            maybe_uninit_defaults.push_str("]");
+            maybe_uninit_defaults.push(']');
             format!(
                 "
                     kernel::module_param::ArrayParam {{
@@ -441,7 +441,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
             ParamType::Ident(ref param_type) => (kernel_type(&param_type), param_ops_path(&param_type).to_string()),
             ParamType::Array{ ref vals, max_length } => {
                 array_types_to_generate.push((vals.clone(), max_length));
-                (format!("rust_array_{}_{}", vals, max_length), generated_array_ops_name(vals, max_length))
+                (format!("__rust_array_param_{}_{}", vals, max_length), generated_array_ops_name(vals, max_length))
             }
         };
 
