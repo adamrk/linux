@@ -468,23 +468,9 @@ pub fn module(ts: TokenStream) -> TokenStream {
                 max_length = max_length
             ),
         };
-        let read_func = match param_type {
-            ParamType::Ident(param_type) => match (param_type.as_ref(), permissions_are_readonly(&param_permissions)) {
-                ("str", false) => format!(
-                    "
-                        fn read<'lck>(&self, lock: &'lck kernel::KParamGuard) -> &'lck [u8] {{
-                            // SAFETY: The pointer is provided either in `param_default` when building the module,
-                            // or by the kernel through `param_set_charp`. Both will be valid C strings.
-                            // Parameters are locked by `KParamGuard`.
-                            unsafe {{
-                                kernel::c_types::c_string_bytes(__{name}_{param_name}_value)
-                            }}
-                        }}
-                    ",
-                    name = name,
-                    param_name = param_name,
-                ),
-                ("str", true) => format!(
+        let read_func = if param_type == ParamType::Ident("str".to_string()) {
+            if permissions_are_readonly(&param_permissions) {
+                format!(
                     "
                         fn read(&self) -> &[u8] {{
                             // SAFETY: The pointer is provided either in `param_default` when building the module,
@@ -497,54 +483,48 @@ pub fn module(ts: TokenStream) -> TokenStream {
                     ",
                     name = name,
                     param_name = param_name,
-                ),
-                (_, false) => format!(
+                )
+            } else {
+                format!(
                     "
-                        // SAFETY: Parameters are locked by `KParamGuard`.
-                        fn read<'lck>(&self, lock: &'lck kernel::KParamGuard) -> &'lck {param_type_internal} {{
-                            unsafe {{ &__{name}_{param_name}_value }}
+                        fn read<'lck>(&self, lock: &'lck kernel::KParamGuard) -> &'lck [u8] {{
+                            // SAFETY: The pointer is provided either in `param_default` when building the module,
+                            // or by the kernel through `param_set_charp`. Both will be valid C strings.
+                            // Parameters are locked by `KParamGuard`.
+                            unsafe {{
+                                kernel::c_types::c_string_bytes(__{name}_{param_name}_value)
+                            }}
                         }}
                     ",
                     name = name,
                     param_name = param_name,
-                    param_type_internal = param_type_internal,
-                ),
-                (_, true) => format!(
+                )
+            }
+        } else {
+            if permissions_are_readonly(&param_permissions) {
+                format!(
                     "
                         // SAFETY: Parameters do not need to be locked because they are read only or sysfs is not enabled.
-                        fn read(&self) -> &{param_type_internal} {{
-                            unsafe {{ &__{name}_{param_name}_value }}
+                        fn read(&self) -> &<{param_type_internal} as kernel::module_param::ModuleParam>::Read {{
+                            unsafe {{ <{param_type_internal} as kernel::module_param::ModuleParam>::read(&__{name}_{param_name}_value) }}
                         }}
                     ",
                     name = name,
                     param_name = param_name,
                     param_type_internal = param_type_internal,
-                ),
-            }
-            ParamType::Array{ ref vals, max_length: _ } => {
-                if permissions_are_readonly(&param_permissions) {
-                    format!(
-                        "
-                            fn read<'a>(&'a self) -> &'a [{vals}] {{
-                                unsafe {{ &__{name}_{param_name}_value.values() }}
-                            }}
-                        ",
-                        vals = vals,
-                        name = name,
-                        param_name = param_name,
-                    )
-                } else {
-                    format!(
-                        "
-                            fn read(&self, lock: &'lck kernel::KParamGuard) -> &'lck [{vals}] {{
-                                unsafe {{ &__{name}_{param_name}_value.values() }}
-                            }}
-                        ",
-                        vals = vals,
-                        name = name,
-                        param_name = param_name,
-                    )
-                }
+                )
+            } else {
+                format!(
+                    "
+                        // SAFETY: Parameters are locked by `KParamGuard`.
+                        fn read<'lck>(&self, lock: &'lck kernel::KParamGuard) -> &'lck <{param_type_internal} as kernel::module_param::ModuleParam>::Read {{
+                            unsafe {{ <{param_type_internal} as kernel::module_param::ModuleParam>::read(&__{name}_{param_name}_value) }}
+                        }}
+                    ",
+                    name = name,
+                    param_name = param_name,
+                    param_type_internal = param_type_internal,
+                )
             }
         };
         let kparam = format!(

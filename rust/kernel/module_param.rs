@@ -15,6 +15,8 @@ use core::fmt::Write;
 ///
 /// [`PAGE_SIZE`]: `crate::PAGE_SIZE`
 pub trait ModuleParam: core::fmt::Display + core::marker::Sized {
+    type Read: ?Sized;
+
     /// Whether the parameter is allowed to be set without an argument.
     ///
     /// Setting this to `true` allows the parameter to be passed without an
@@ -28,6 +30,8 @@ pub trait ModuleParam: core::fmt::Display + core::marker::Sized {
     /// argument. If `NOARG_ALLOWED` is set to `false` then `arg` is guaranteed
     /// to always be `Some(_)`.
     fn try_from_param_arg(arg: Option<&[u8]>) -> Option<Self>;
+
+    unsafe fn read(&self) -> &Self::Read;
 
     /// Set the module parameter from a string.
     ///
@@ -161,12 +165,17 @@ impl_parse_int!(usize);
 macro_rules! impl_module_param {
     ($ty:ident) => {
         impl ModuleParam for $ty {
+            type Read = $ty;
             const NOARG_ALLOWED: bool = false;
 
             fn try_from_param_arg(arg: Option<&[u8]>) -> Option<Self> {
                 let bytes = arg?;
                 let utf8 = core::str::from_utf8(bytes).ok()?;
                 <$ty as crate::module_param::ParseInt>::from_str(utf8)
+            }
+
+            unsafe fn read(&self) -> &Self::Read {
+                self
             }
         }
     };
@@ -301,6 +310,7 @@ internal_make_param_ops!(
 );
 
 impl ModuleParam for bool {
+    type Read = bool;
     const NOARG_ALLOWED: bool = true;
 
     fn try_from_param_arg(arg: Option<&[u8]>) -> Option<Self> {
@@ -310,6 +320,10 @@ impl ModuleParam for bool {
             Some(b"n") | Some(b"N") | Some(b"0") | Some(b"false") => Some(false),
             _ => None,
         }
+    }
+
+    unsafe fn read(&self) -> &Self::Read {
+        self
     }
 }
 
@@ -359,6 +373,7 @@ impl<T: core::fmt::Display, const N: usize> core::fmt::Display for ArrayParam<T,
 }
 
 impl<T: Copy + core::fmt::Display + ModuleParam, const N: usize> ModuleParam for ArrayParam<T, { N }> {
+    type Read = [T];
     const NOARG_ALLOWED: bool = false;
 
     fn try_from_param_arg(arg: Option<&[u8]>) -> Option<Self> {
@@ -369,5 +384,9 @@ impl<T: Copy + core::fmt::Display + ModuleParam, const N: usize> ModuleParam for
             }
             Some(result)
         })
+    }
+
+    unsafe fn read(&self) -> &Self::Read {
+        self.values()
     }
 }
