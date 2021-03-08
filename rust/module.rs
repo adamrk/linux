@@ -65,7 +65,7 @@ fn expect_byte_string(it: &mut token_stream::IntoIter) -> String {
     try_byte_string(it).expect("Expected byte string")
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum ParamType {
     Ident(String),
     Array {
@@ -315,7 +315,11 @@ fn get_default(param_type: &ParamType, param_it: &mut token_stream::IntoIter) ->
 }
 
 fn generated_array_ops_name(vals: &str, max_length: usize) -> String {
-    unimplemented!()
+    format!(
+        "__generated_array_ops_{vals}_{max_length}",
+        vals = vals,
+        max_length = max_length
+    )
 }
 
 /// Declares a kernel module.
@@ -407,15 +411,19 @@ pub fn module(ts: TokenStream) -> TokenStream {
 
     let mut array_types_to_generate = Vec::new();
 
+    println!("Starting loop");
     loop {
+        println!("Getting param");
         let param_name = match it.next() {
             Some(TokenTree::Ident(ident)) => ident.to_string(),
             Some(_) => panic!("Expected Ident or end"),
             None => break,
         };
 
+        println!("Got name {}", param_name);
         assert_eq!(expect_punct(&mut it), ':');
         let param_type = expect_type(&mut it);
+        println!("Got name {:?}", param_type);
         let group = expect_group(&mut it);
         assert_eq!(expect_punct(&mut it), ',');
 
@@ -432,7 +440,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
         let (param_kernel_type, ops): (String, _) = match param_type {
             ParamType::Ident(ref param_type) => (kernel_type(&param_type), param_ops_path(&param_type).to_string()),
             ParamType::Array{ ref vals, max_length } => {
-                array_types_to_generate.push(ParamType::Array{ vals: vals.clone(), max_length });
+                array_types_to_generate.push((vals.clone(), max_length));
                 (format!("rust_array_{}_{}", vals, max_length), generated_array_ops_name(vals, max_length))
             }
         };
@@ -517,7 +525,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
                 if permissions_are_readonly(&param_permissions) {
                     format!(
                         "
-                            fn read(&'a self) -> impl core::iter::Iterator<Item=&'a {vals}> + 'a {{
+                            fn read<'a>(&'a self) -> &'a [{vals}] {{
                                 unsafe {{ &__{name}_{param_name}_value.values() }}
                             }}
                         ",
@@ -528,7 +536,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
                 } else {
                     format!(
                         "
-                            fn read(&self, lock: &'lck kernel::KParamGuard) -> impl core::iter::Iterator<Item=&'lck {vals}> + 'lck {{
+                            fn read(&self, lock: &'lck kernel::KParamGuard) -> &'lck [{vals}] {{
                                 unsafe {{ &__{name}_{param_name}_value.values() }}
                             }}
                         ",
@@ -602,6 +610,26 @@ pub fn module(ts: TokenStream) -> TokenStream {
                 ops = ops,
                 permissions = param_permissions,
                 kparam = kparam,
+            )
+        );
+    }
+
+    let mut generated_array_types = String::new();
+
+    for (vals, max_length) in array_types_to_generate {
+        let ops_name = generated_array_ops_name(&vals, max_length);
+        generated_array_types.push_str(
+            &format!(
+                "
+                    /// Some doc
+                    make_param_ops!(
+                        {ops_name},
+                        kernel::module_param::ArrayParam<{vals}, {{ {max_length} }}>
+                    );
+                ",
+                ops_name = ops_name,
+                vals = vals,
+                max_length = max_length,
             )
         );
     }
@@ -690,6 +718,8 @@ pub fn module(ts: TokenStream) -> TokenStream {
             {file}
 
             {params_modinfo}
+
+            {generated_array_types}
         ",
         type_ = type_,
         name = name,
@@ -698,6 +728,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
         license = &build_modinfo_string(&name, "license", &license),
         file = &build_modinfo_string_only_builtin(&name, "file", &file),
         params_modinfo = params_modinfo,
+        generated_array_types = generated_array_types,
         initcall_section = ".initcall6.init"
     ).parse().unwrap()
 }

@@ -10,6 +10,7 @@ use alloc::boxed::Box;
 use core::pin::Pin;
 use kernel::prelude::*;
 use kernel::{chrdev, cstr, file_operations::FileOperations, miscdev};
+use kernel::make_param_ops;
 
 module! {
     type: RustExample,
@@ -37,6 +38,11 @@ module! {
             default: 42,
             permissions: 0o644,
             description: b"Example of usize",
+        },
+        my_array: [i32; 2] {
+            default: [0, 1],
+            permissions: 0,
+            description: b"Example of array",
         },
     },
 }
@@ -72,6 +78,7 @@ impl KernelModule for RustExample {
                 core::str::from_utf8(my_str.read(&lock))?
             );
             println!("  my_usize:   {}", my_usize.read(&lock));
+            println!("  my_array:   {:?}", my_array.read());
         }
 
         // Including this large variable on the stack will trigger
