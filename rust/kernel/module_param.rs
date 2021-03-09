@@ -29,7 +29,7 @@ pub trait ModuleParam: core::fmt::Display + core::marker::Sized {
     /// `arg == None` indicates that the parameter was passed without an
     /// argument. If `NOARG_ALLOWED` is set to `false` then `arg` is guaranteed
     /// to always be `Some(_)`.
-    fn try_from_param_arg(arg: Option<&[u8]>) -> Option<Self>;
+    fn try_from_param_arg(arg: Option<&'static [u8]>) -> Option<Self>;
 
     unsafe fn read(&self) -> &Self::Read;
 
@@ -168,7 +168,7 @@ macro_rules! impl_module_param {
             type Read = $ty;
             const NOARG_ALLOWED: bool = false;
 
-            fn try_from_param_arg(arg: Option<&[u8]>) -> Option<Self> {
+            fn try_from_param_arg(arg: Option<&'static [u8]>) -> Option<Self> {
                 let bytes = arg?;
                 let utf8 = core::str::from_utf8(bytes).ok()?;
                 <$ty as crate::module_param::ParseInt>::from_str(utf8)
@@ -294,7 +294,7 @@ impl ModuleParam for bool {
     type Read = bool;
     const NOARG_ALLOWED: bool = true;
 
-    fn try_from_param_arg(arg: Option<&[u8]>) -> Option<Self> {
+    fn try_from_param_arg(arg: Option<&'static [u8]>) -> Option<Self> {
         match arg {
             None => Some(true),
             Some(b"y") | Some(b"Y") | Some(b"1") | Some(b"true") => Some(true),
@@ -357,7 +357,7 @@ impl<T: Copy + core::fmt::Display + ModuleParam, const N: usize> ModuleParam for
     type Read = [T];
     const NOARG_ALLOWED: bool = false;
 
-    fn try_from_param_arg(arg: Option<&[u8]>) -> Option<Self> {
+    fn try_from_param_arg(arg: Option<&'static [u8]>) -> Option<Self> {
         arg.and_then(|args| {
             let mut result = Self::new();
             for arg in args.split(|b| *b == b',') {
@@ -371,3 +371,59 @@ impl<T: Copy + core::fmt::Display + ModuleParam, const N: usize> ModuleParam for
         self.values()
     }
 }
+
+enum StringParam {
+    Ref(&'static [u8]),
+    Owned(alloc::vec::Vec<u8>),
+}
+
+impl StringParam {
+    fn bytes(&self) -> &[u8] {
+        match self {
+            StringParam::Ref(bytes) => *bytes,
+            StringParam::Owned(vec) => &vec[..],
+        }
+    }
+}
+
+impl core::fmt::Display for StringParam {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let bytes = self.bytes();
+        match core::str::from_utf8(bytes) {
+            Ok(utf8) => write!(f, "{}", utf8),
+            Err(_) => write!(f, "{:?}", bytes),
+        }
+    }
+}
+
+impl ModuleParam for StringParam {
+    type Read = [u8];
+    const NOARG_ALLOWED: bool = false;
+
+    fn try_from_param_arg(arg: Option<&'static [u8]>) -> Option<Self> {
+        // TODO: unsafe doc
+        let slab_available = unsafe {
+            crate::bindings::slab_is_available()
+        };
+        arg.map(|arg| {
+            if slab_available {
+                let mut vec = alloc::vec::Vec::new();
+                vec.extend_from_slice(arg);
+                StringParam::Owned(vec)
+            } else {
+                StringParam::Ref(arg)
+            }
+        })
+    }
+
+    unsafe fn read(&self) -> &Self::Read {
+        self.bytes()
+    }
+}
+
+make_param_ops!(
+    /// Rust implementation of [`kernel_param_ops`](../../../include/linux/moduleparam.h)
+    /// for [`StringParam`].
+    PARAM_OPS_STR,
+    StringParam
+);
