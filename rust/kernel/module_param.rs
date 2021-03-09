@@ -372,7 +372,7 @@ impl<T: Copy + core::fmt::Display + ModuleParam, const N: usize> ModuleParam for
     }
 }
 
-enum StringParam {
+pub enum StringParam {
     Ref(&'static [u8]),
     Owned(alloc::vec::Vec<u8>),
 }

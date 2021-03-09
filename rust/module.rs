@@ -240,15 +240,8 @@ fn param_ops_path(param_type: &str) -> &'static str {
         "u64" => "kernel::module_param::PARAM_OPS_U64",
         "isize" => "kernel::module_param::PARAM_OPS_ISIZE",
         "usize" => "kernel::module_param::PARAM_OPS_USIZE",
-        "str" => "kernel::bindings::param_ops_charp",
+        "str" => "kernel::module_param::PARAM_OPS_STR",
         t => panic!("Unrecognized type {}", t)
-    }
-}
-
-fn kernel_type(param_type: &str) -> String {
-    match param_type {
-        "str" => "charp".to_string(),
-        other => other.to_string(),
     }
 }
 
@@ -256,7 +249,7 @@ fn try_simple_param_val(param_type: &str) -> Box<dyn Fn(&mut token_stream::IntoI
     match param_type {
         "bool" => Box::new(|param_it| try_ident(param_it)),
         "str" => Box::new(|param_it| try_byte_string(param_it).map(|s| {
-            format!("b\"{}\0\" as *const _ as *mut kernel::c_types::c_char", s)
+            format!("kernel::module_param::StringParam::Ref(b\"{}\")", s)
         })),
         _ => Box::new(|param_it| try_literal(param_it)),
     }
@@ -438,7 +431,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
         // TODO: more primitive types
         // TODO: other kinds: arrays, unsafes, etc.
         let (param_kernel_type, ops): (String, _) = match param_type {
-            ParamType::Ident(ref param_type) => (kernel_type(&param_type), param_ops_path(&param_type).to_string()),
+            ParamType::Ident(ref param_type) => (param_type.to_string(), param_ops_path(&param_type).to_string()),
             ParamType::Array{ ref vals, max_length } => {
                 array_types_to_generate.push((vals.clone(), max_length));
                 (format!("__rust_array_param_{}_{}", vals, max_length), generated_array_ops_name(vals, max_length))
@@ -459,7 +452,7 @@ pub fn module(ts: TokenStream) -> TokenStream {
         ));
         let param_type_internal = match param_type {
             ParamType::Ident(ref param_type) => match param_type.as_ref() {
-                "str" => "*mut kernel::c_types::c_char".to_string(),
+                "str" => "kernel::module_param::StringParam".to_string(),
                 other => other.to_string(),
             }
             ParamType::Array { ref vals, max_length } => format!(
@@ -468,64 +461,30 @@ pub fn module(ts: TokenStream) -> TokenStream {
                 max_length = max_length
             ),
         };
-        let read_func = if param_type == ParamType::Ident("str".to_string()) {
-            if permissions_are_readonly(&param_permissions) {
-                format!(
-                    "
-                        fn read(&self) -> &[u8] {{
-                            // SAFETY: The pointer is provided either in `param_default` when building the module,
-                            // or by the kernel through `param_set_charp`. Both will be valid C strings.
-                            // Parameters do not need to be locked because they are read only or sysfs is not enabled.
-                            unsafe {{
-                                kernel::c_types::c_string_bytes(__{name}_{param_name}_value)
-                            }}
-                        }}
-                    ",
-                    name = name,
-                    param_name = param_name,
-                )
-            } else {
-                format!(
-                    "
-                        fn read<'lck>(&self, lock: &'lck kernel::KParamGuard) -> &'lck [u8] {{
-                            // SAFETY: The pointer is provided either in `param_default` when building the module,
-                            // or by the kernel through `param_set_charp`. Both will be valid C strings.
-                            // Parameters are locked by `KParamGuard`.
-                            unsafe {{
-                                kernel::c_types::c_string_bytes(__{name}_{param_name}_value)
-                            }}
-                        }}
-                    ",
-                    name = name,
-                    param_name = param_name,
-                )
-            }
+        let read_func = if permissions_are_readonly(&param_permissions) {
+            format!(
+                "
+                    // SAFETY: Parameters do not need to be locked because they are read only or sysfs is not enabled.
+                    fn read(&self) -> &<{param_type_internal} as kernel::module_param::ModuleParam>::Read {{
+                        unsafe {{ <{param_type_internal} as kernel::module_param::ModuleParam>::read(&__{name}_{param_name}_value) }}
+                    }}
+                ",
+                name = name,
+                param_name = param_name,
+                param_type_internal = param_type_internal,
+            )
         } else {
-            if permissions_are_readonly(&param_permissions) {
-                format!(
-                    "
-                        // SAFETY: Parameters do not need to be locked because they are read only or sysfs is not enabled.
-                        fn read(&self) -> &<{param_type_internal} as kernel::module_param::ModuleParam>::Read {{
-                            unsafe {{ <{param_type_internal} as kernel::module_param::ModuleParam>::read(&__{name}_{param_name}_value) }}
-                        }}
-                    ",
-                    name = name,
-                    param_name = param_name,
-                    param_type_internal = param_type_internal,
-                )
-            } else {
-                format!(
-                    "
-                        // SAFETY: Parameters are locked by `KParamGuard`.
-                        fn read<'lck>(&self, lock: &'lck kernel::KParamGuard) -> &'lck <{param_type_internal} as kernel::module_param::ModuleParam>::Read {{
-                            unsafe {{ <{param_type_internal} as kernel::module_param::ModuleParam>::read(&__{name}_{param_name}_value) }}
-                        }}
-                    ",
-                    name = name,
-                    param_name = param_name,
-                    param_type_internal = param_type_internal,
-                )
-            }
+            format!(
+                "
+                    // SAFETY: Parameters are locked by `KParamGuard`.
+                    fn read<'lck>(&self, lock: &'lck kernel::KParamGuard) -> &'lck <{param_type_internal} as kernel::module_param::ModuleParam>::Read {{
+                        unsafe {{ <{param_type_internal} as kernel::module_param::ModuleParam>::read(&__{name}_{param_name}_value) }}
+                    }}
+                ",
+                name = name,
+                param_name = param_name,
+                param_type_internal = param_type_internal,
+            )
         };
         let kparam = format!(
             "
