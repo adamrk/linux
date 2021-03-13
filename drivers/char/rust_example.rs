@@ -8,14 +8,14 @@
 
 use alloc::boxed::Box;
 use core::pin::Pin;
+use kernel::make_param_ops;
 use kernel::prelude::*;
 use kernel::{chrdev, cstr, file_operations::FileOperations, miscdev};
-use kernel::make_param_ops;
 
 module! {
     type: RustExample,
     name: b"rust_example",
-    author: b"Rust for Linux Contributors",
+    author: b"Rust for Linux Contributors-",
     description: b"An example kernel module written in Rust",
     license: b"GPL v2",
     params: {

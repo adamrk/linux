@@ -12,7 +12,13 @@
 //! do so first instead of bypassing this crate.
 
 #![no_std]
-#![feature(allocator_api, alloc_error_handler, const_fn, const_mut_refs, maybe_uninit_ref)]
+#![feature(
+    allocator_api,
+    alloc_error_handler,
+    const_fn,
+    const_mut_refs,
+    maybe_uninit_ref
+)]
 #![deny(clippy::complexity)]
 #![deny(clippy::correctness)]
 #![deny(clippy::perf)]
