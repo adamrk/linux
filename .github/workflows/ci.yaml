@@ -179,10 +179,10 @@ jobs:
       - run: "grep    '\\] \\[3\\]   my_str:     🦀mod\\s*$'           qemu-stdout.log"
       - run: "grep    '\\] \\[4\\]   my_str:     default str val\\s*$' qemu-stdout.log"
 
-      - run: "grep -F     ']   my_array:   [0,1]' qemu-stdout.log"
-      - run: "grep -F '] [2]   my_array:   [1,2,3]' qemu-stdout.log"
-      - run: "grep -F '] [3]   my_array:   [0,1]' qemu-stdout.log"
-      - run: "grep -F '] [4]   my_array:   [1,2,3]' qemu-stdout.log"
+      - run: "grep -F     ']   my_array:   [0, 1]'    qemu-stdout.log"
+      - run: "grep -F '] [2]   my_array:   [1, 2, 3]' qemu-stdout.log"
+      - run: "grep -F '] [3]   my_array:   [0, 1]'    qemu-stdout.log"
+      - run: "grep -F '] [4]   my_array:   [1, 2, 3]' qemu-stdout.log"
 
       - run: grep -F '] [3] Rust Example (exit)' qemu-stdout.log
       - run: grep -F '] [4] Rust Example (exit)' qemu-stdout.log
