@@ -156,7 +156,7 @@ jobs:
       # Run
       - run: ${{ env.BUILD_DIR }}usr/gen_init_cpio .github/workflows/qemu-initramfs.desc > qemu-initramfs.img
 
-      - run: qemu-system-${{ env.QEMU_ARCH }} -kernel ${{ env.BUILD_DIR }}${{ env.IMAGE_PATH }} -initrd qemu-initramfs.img -M ${{ env.QEMU_MACHINE }} -cpu ${{ env.QEMU_CPU }} -smp 2 -nographic -no-reboot -append '${{ env.QEMU_APPEND }} rust_example.my_i32=123321 rust_example.my_str=🦀mod rust_example_2.my_i32=234432' | tee qemu-stdout.log
+      - run: qemu-system-${{ env.QEMU_ARCH }} -kernel ${{ env.BUILD_DIR }}${{ env.IMAGE_PATH }} -initrd qemu-initramfs.img -M ${{ env.QEMU_MACHINE }} -cpu ${{ env.QEMU_CPU }} -smp 2 -nographic -no-reboot -append '${{ env.QEMU_APPEND }} rust_example.my_i32=123321 rust_example.my_str=🦀mod rust_example_2.my_i32=234432 rust_example_2.my_array=1,2,3' | tee qemu-stdout.log
 
       # Check
       - run: grep -F     '] Rust Example (init)' qemu-stdout.log
@@ -178,6 +178,11 @@ jobs:
       - run: "grep    '\\] \\[2\\]   my_str:     default str val\\s*$' qemu-stdout.log"
       - run: "grep    '\\] \\[3\\]   my_str:     🦀mod\\s*$'           qemu-stdout.log"
       - run: "grep    '\\] \\[4\\]   my_str:     default str val\\s*$' qemu-stdout.log"
+
+      - run: "grep -F     ']   my_array:   [0,1]' qemu-stdout.log"
+      - run: "grep -F '] [2]   my_array:   [1,2,3]' qemu-stdout.log"
+      - run: "grep -F '] [3]   my_array:   [0,1]' qemu-stdout.log"
+      - run: "grep -F '] [4]   my_array:   [1,2,3]' qemu-stdout.log"
 
       - run: grep -F '] [3] Rust Example (exit)' qemu-stdout.log
       - run: grep -F '] [4] Rust Example (exit)' qemu-stdout.log

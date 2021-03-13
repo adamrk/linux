@@ -39,7 +39,7 @@ module! {
             permissions: 0o644,
             description: b"Example of usize",
         },
-        my_array: [i32; 2] {
+        my_array: [i32; 3] {
             default: [0, 1],
             permissions: 0,
             description: b"Example of array",
