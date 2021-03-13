@@ -15,4 +15,4 @@ pub use alloc::{borrow::ToOwned, string::String};
 
 pub use module::module;
 
-pub use super::{println, static_assert, KernelModule, KernelResult};
+pub use super::{make_param_ops, println, static_assert, KernelModule, KernelResult};

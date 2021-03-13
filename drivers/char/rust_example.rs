@@ -101,7 +101,7 @@ impl KernelModule for RustExample {
         // stack probing on the supported archs.
         // This will verify that stack probing does not lead to
         // any errors if we need to link `__rust_probestack`.
-        let x: [u64; 1028] = core::hint::black_box([5; 1028]);
+        let x: [u64; 514] = core::hint::black_box([5; 514]);
         println!("Large array has length: {}", x.len());
 
         let mut chrdev_reg =
