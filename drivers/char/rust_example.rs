@@ -8,7 +8,6 @@
 
 use alloc::boxed::Box;
 use core::pin::Pin;
-use kernel::make_param_ops;
 use kernel::prelude::*;
 use kernel::{chrdev, cstr, file_operations::FileOperations, miscdev};
 
