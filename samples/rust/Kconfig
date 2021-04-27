@@ -100,4 +100,14 @@ config SAMPLE_RUST_SEMAPHORE_C
 
 	  If unsure, say N.
 
+config SAMPLE_RUST_SEQ_FILE
+	tristate "Seq file"
+	help
+	  This option builds the Rust seq_file sample.
+
+	  To compile this as a module, choose M here:
+	  the module will be called rust_seq_file.
+
+	  If unsure, say N.
+
 endif # SAMPLES_RUST
