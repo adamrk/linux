@@ -53,6 +53,7 @@ pub mod module_param;
 pub mod prelude;
 pub mod print;
 pub mod random;
+pub mod seq_file;
 mod static_assert;
 pub mod sync;
 
