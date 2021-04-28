@@ -307,7 +307,7 @@ jobs:
       - run: |
           grep '] rust_seq_file: Rust seq_file sample (init)$'   qemu-stdout.log
           grep '] rust_seq_file: Rust seq_file sample (exit)$'   qemu-stdout.log
-          if [ $(grep -c 'rust_seq_file: device opened this many times: 2' qemu-stdout.log) -ne 2 ]; then
+          if [ $(grep -c 'rust_seq_file: device opened this many times: 2' qemu-stdout.log) -ne 3 ]; then
             exit 1; 
           else 
             exit 0;
