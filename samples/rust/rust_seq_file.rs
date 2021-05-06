@@ -23,7 +23,7 @@ use kernel::{
     io_buffer::IoBufferWriter,
     miscdev, mutex_init,
     prelude::*,
-    seq_file,
+    proc_fs, seq_file,
     sync::Mutex,
 };
 
@@ -36,10 +36,6 @@ module! {
     params: {
     },
 }
-
-const MAX_DIGITS: usize = 3;
-const MAX_LENGTH: usize = MAX_DIGITS + 1;
-const MAX_COUNT: u32 = 10u32.pow(MAX_DIGITS as u32);
 
 #[derive(Clone)]
 struct SharedState(Arc<Mutex<u32>>);
@@ -61,7 +57,15 @@ impl seq_file::SeqOperations for SharedState {
     type Item = String;
     type Iterator = Take<Repeat<String>>;
 
+    fn display(item: &Self::Item) -> &str {
+        &item[..]
+    }
+
     fn start(arg: &SharedState) -> Option<Box<Peekable<Self::Iterator>>> {
+        const MAX_DIGITS: usize = 3;
+        const MAX_LENGTH: usize = MAX_DIGITS + 1;
+        const MAX_COUNT: u32 = 10u32.pow(MAX_DIGITS as u32);
+
         let count = arg.0.lock();
         let mut message = String::new();
 
@@ -110,7 +114,8 @@ impl FileOperations for SharedState {
 }
 
 struct RustSeqFileDev {
-    _seq: Pin<Box<seq_file::SeqFile<SharedState>>>,
+    #[cfg(CONFIG_PROC_FS)]
+    _proc: proc_fs::ProcDirEntry<SharedState>,
     _dev: Pin<Box<miscdev::Registration<SharedState>>>,
 }
 
@@ -120,14 +125,16 @@ impl KernelModule for RustSeqFileDev {
 
         let state = SharedState::try_new()?;
 
-        let seq_file =
-            kernel::seq_file::proc_create::<SharedState>(cstr!("rust_seq_file"), state.clone())?;
+        #[cfg(CONFIG_PROC_FS)]
+        let proc_dir_entry =
+            seq_file::proc_create_seq::<SharedState>(cstr!("rust_seq_file"), state.clone())?;
 
         let dev_reg =
             miscdev::Registration::new_pinned::<SharedState>(cstr!("rust_seq_file"), None, state)?;
 
         let dev = RustSeqFileDev {
-            _seq: seq_file,
+            #[cfg(CONFIG_PROC_FS)]
+            _proc: proc_dir_entry,
             _dev: dev_reg,
         };
 
