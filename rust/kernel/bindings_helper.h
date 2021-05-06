@@ -15,6 +15,10 @@
 #include <linux/mm.h>
 #include <uapi/linux/android/binder.h>
 
+#ifdef CONFIG_PROC_FS
+#include "../../fs/proc/internal.h"
+#endif
+
 // `bindgen` gets confused at certain things
 const gfp_t BINDINGS_GFP_KERNEL = GFP_KERNEL;
 const gfp_t BINDINGS___GFP_ZERO = __GFP_ZERO;
