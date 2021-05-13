@@ -66,7 +66,12 @@ pub mod module_param;
 mod build_assert;
 pub mod prelude;
 pub mod print;
+
+#[cfg(CONFIG_PROC_FS)]
+pub mod proc_fs;
+
 pub mod random;
+pub mod seq_file;
 mod static_assert;
 pub mod sync;
 
@@ -86,7 +91,7 @@ pub mod user_ptr;
 pub use build_error::build_error;
 
 pub use crate::error::{Error, Result};
-pub use crate::types::{Mode, ScopeGuard};
+pub use crate::types::{Mode, ScopeGuard, UnsafeReference};
 
 /// Page size defined in terms of the `PAGE_SHIFT` macro from C.
 ///
