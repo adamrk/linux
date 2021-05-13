@@ -62,7 +62,12 @@ pub mod module_param;
 mod build_assert;
 pub mod prelude;
 pub mod print;
+
+#[cfg(CONFIG_PROC_FS)]
+pub mod proc_fs;
+
 pub mod random;
+pub mod seq_file;
 mod static_assert;
 pub mod sync;
 
