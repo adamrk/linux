@@ -375,6 +375,11 @@ jobs:
           grep '] rust_semaphore_c: Rust semaphore sample (in C, for comparison) (init)$' qemu-stdout.log
           grep '] rust_semaphore_c: Rust semaphore sample (in C, for comparison) (exit)$' qemu-stdout.log
 
+      - run: |
+          grep '] rust_seq_file: Rust seq_file sample (init)$'   qemu-stdout.log
+          grep '] rust_seq_file: Rust seq_file sample (exit)$'   qemu-stdout.log
+          test $(grep -c 'rust_seq_file: device opened this many times: 2' qemu-stdout.log) -eq 2
+
       # Report
       - run: |
           ls -l \

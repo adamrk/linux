@@ -37,4 +37,15 @@ busybox insmod rust_module_parameters_loadable_custom.ko \
 busybox  rmmod rust_module_parameters_loadable_default.ko
 busybox  rmmod rust_module_parameters_loadable_custom.ko
 
+busybox insmod rust_seq_file.ko
+busybox mkdir proc
+busybox mount -t proc proc /proc
+export RUST_SEQ_MINOR=$(busybox cat /proc/misc | busybox grep rust_seq_file | busybox cut -d ' ' -f 1)
+busybox mknod /dev/rust_seq_file0 c 10 $RUST_SEQ_MINOR
+busybox cat /dev/rust_seq_file0
+busybox cat /dev/rust_seq_file0
+busybox cat /proc/rust_seq_file
+busybox rm /dev/rust_seq_file0
+busybox rmmod rust_seq_file.ko
+
 busybox reboot -f
