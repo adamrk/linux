@@ -3,7 +3,7 @@
 //! Rust stack probing sample
 
 #![no_std]
-#![feature(allocator_api, global_asm)]
+#![feature(allocator_api, global_asm, bench_black_box)]
 #![feature(test)]
 
 use kernel::prelude::*;
