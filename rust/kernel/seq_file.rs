@@ -16,7 +16,7 @@ use core::{
     iter::{Iterator, Peekable},
     marker::PhantomData,
     mem,
-    ops::{Deref, DerefMut},
+    ops::DerefMut,
     ptr,
 };
 
@@ -30,7 +30,7 @@ use crate::{bindings, c_str, c_types, str::CStr, types::PointerWrapper, Result};
 /// #![feature(allocator_api)]
 ///
 /// use core::iter::Peekable;
-/// use kernel::{Error, Result, seq_file};
+/// use kernel::{Error, Result, seq_file, UnsafeReference};
 ///
 /// struct Data(&'static [String]);
 ///
@@ -40,8 +40,8 @@ use crate::{bindings, c_str, c_types, str::CStr, types::PointerWrapper, Result};
 ///     type DataWrapper = Box<Self>;
 ///     type IteratorWrapper = Box<Peekable<Self::Iterator>>;
 ///
-///     fn start(&self) -> Result<Self::IteratorWrapper> {
-///         let iter = self.0.iter();
+///     fn start(data: UnsafeReference<Data>) -> Result<Self::IteratorWrapper> {
+///         let iter = data.0.iter();
 ///         Box::try_new(iter.peekable()).map_err(|_| Error::ENOMEM)
 ///     }
 ///
@@ -56,17 +56,20 @@ pub trait SeqOperations {
     /// Type produced on each iteration.
     type Item;
 
-    /// Type created when the seq file is opened.
+    /// Type created when the seq file is read and then iterated through to
+    /// produce the file's contents.
     type Iterator: Iterator<Item = Self::Item>;
 
-    /// Wrapper used to store a pointer to `Self` on the C side.
-    type DataWrapper: PointerWrapper + Deref<Target = Self>;
+    /// Wrapper used to store a pointer to the data on the C side.
+    type DataWrapper: PointerWrapper;
 
     /// Wrapper used to store a pointer to the iterator on the C side.
     type IteratorWrapper: PointerWrapper + DerefMut<Target = Peekable<Self::Iterator>>;
 
-    /// Called once each time the `seq_file` is opened.
-    fn start(&self) -> Result<Self::IteratorWrapper>;
+    /// Called once each time the `seq_file` is read.
+    fn start(
+        data: <Self::DataWrapper as PointerWrapper>::Borrowed,
+    ) -> Result<Self::IteratorWrapper>;
 
     /// How the item will be displayed to the reader.
     fn display(item: &Self::Item) -> &str;
@@ -153,15 +156,15 @@ extern "C" fn start_callback<T: SeqOperations>(
     m: *mut bindings::seq_file,
     pos: *mut bindings::loff_t,
 ) -> *mut c_types::c_void {
-    // SAFETY: This function will be called by opening a proc file generated
+    // SAFETY: This function will be called by reading a proc file generated
     // from `proc_create_seq_private` on the C side with data created via
-    // `T::DataWrapper::into_pointer`. We don't move the data in the wrapper
-    // so the pointer will remain valid for later calls.
-    let data_wrapper =
-        unsafe { T::DataWrapper::from_pointer(bindings::PDE_DATA((*(*m).file).f_inode)) };
-    let iterator = data_wrapper.start().ok();
-    // Data is still used in the `proc_dir_entry`.
-    mem::forget(data_wrapper);
+    // `T::DataWrapper::into_pointer`. The data will not be destroyed until
+    // the proc_dir_entry is destroyed and that operation will wait for all
+    // readers to finish, so the data will be valid for the entire borrow. No
+    // mutable borrows will be created because this is the only point at which
+    // the data is accessed (other than when it is freed).
+    let data = unsafe { T::DataWrapper::borrow(bindings::PDE_DATA((*(*m).file).f_inode)) };
+    let iterator = T::start(data).ok();
     // SAFETY: The caller guarantees that `pos` points to a valid `loff_t`.
     let pos = unsafe { *pos };
     match iterator {

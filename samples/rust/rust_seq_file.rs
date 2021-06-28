@@ -26,7 +26,7 @@ use kernel::{
     miscdev, mutex_init,
     prelude::*,
     proc_fs, seq_file,
-    sync::{Mutex, Ref},
+    sync::{Mutex, Ref, RefBorrow},
     Error, Result,
 };
 
@@ -63,12 +63,12 @@ impl seq_file::SeqOperations for State {
         &item[..]
     }
 
-    fn start(&self) -> Result<Self::IteratorWrapper> {
+    fn start(state: RefBorrow<State>) -> Result<Self::IteratorWrapper> {
         const MAX_DIGITS: usize = 3;
         const MAX_LENGTH: usize = MAX_DIGITS + 1;
         const MAX_COUNT: u32 = 10u32.pow(MAX_DIGITS as u32) - 1;
 
-        let count = self.0.lock();
+        let count = state.0.lock();
         let mut message = String::new();
 
         let template = if *count <= MAX_COUNT {
