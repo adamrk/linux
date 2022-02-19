@@ -157,8 +157,7 @@ extern "C" fn start_callback<T: SeqOperations>(
     // from `proc_create_seq_private` on the C side with data created via
     // `T::DataWrapper::into_pointer`. We don't move the data in the wrapper
     // so the pointer will remain valid for later calls.
-    let data_wrapper =
-        unsafe { T::DataWrapper::from_pointer(bindings::PDE_DATA((*(*m).file).f_inode)) };
+    let data_wrapper = unsafe { T::DataWrapper::from_pointer((*m).private) };
     let iterator = data_wrapper.start().ok();
     // Data is still used in the `proc_dir_entry`.
     mem::forget(data_wrapper);
@@ -183,14 +182,71 @@ extern "C" fn start_callback<T: SeqOperations>(
 pub(crate) struct SeqFileOperationsVTable<T>(PhantomData<T>);
 
 impl<T: SeqOperations> SeqFileOperationsVTable<T> {
-    const VTABLE: bindings::seq_operations = bindings::seq_operations {
+    const SEQ_VTABLE: bindings::seq_operations = bindings::seq_operations {
         start: Some(start_callback::<T>),
         stop: Some(stop_callback::<T>),
         next: Some(next_callback::<T>),
         show: Some(show_callback::<T>),
     };
 
-    pub(crate) const fn build() -> &'static bindings::seq_operations {
+    // TODOABK: safety
+    pub(crate) const unsafe fn seq_build() -> &'static bindings::seq_operations {
+        &Self::SEQ_VTABLE
+    }
+
+    extern "C" fn open_callback(
+        inode: *mut bindings::inode,
+        file: *mut bindings::file,
+    ) -> c_types::c_int {
+        // TODOABK: docs
+        unsafe {
+            bindings::seq_open_private(
+                file,
+                &Self::SEQ_VTABLE as *const _ as *mut bindings::seq_operations,
+                // TODOABK: how to convert safely?
+                mem::size_of::<T::DataWrapper>() as i32,
+            )
+        }
+    }
+
+    const VTABLE: bindings::file_operations = bindings::file_operations {
+        open: Some(Self::open_callback),
+        release: Some(bindings::seq_release_private),
+        read: Some(bindings::seq_read),
+        llseek: Some(bindings::seq_lseek),
+
+        check_flags: None,
+        compat_ioctl: None,
+        copy_file_range: None,
+        fallocate: None,
+        fadvise: None,
+        fasync: None,
+        flock: None,
+        flush: None,
+        fsync: None,
+        get_unmapped_area: None,
+        iterate: None,
+        iterate_shared: None,
+        iopoll: None,
+        lock: None,
+        mmap: None,
+        mmap_supported_flags: 0,
+        owner: ptr::null_mut(),
+        poll: None,
+        read_iter: None,
+        remap_file_range: None,
+        sendpage: None,
+        setlease: None,
+        show_fdinfo: None,
+        splice_read: None,
+        splice_write: None,
+        unlocked_ioctl: None,
+        write: None,
+        write_iter: None,
+    };
+
+    // TODOABK: safety
+    pub(crate) const unsafe fn build() -> &'static bindings::file_operations {
         &Self::VTABLE
     }
 }
