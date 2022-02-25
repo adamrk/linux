@@ -48,6 +48,8 @@ pub mod chrdev;
 #[cfg(CONFIG_COMMON_CLK)]
 pub mod clk;
 pub mod cred;
+#[cfg(CONFIG_DEBUG_FS)]
+pub mod debugfs;
 pub mod device;
 pub mod driver;
 mod error;
@@ -74,9 +76,6 @@ pub mod module_param;
 mod build_assert;
 pub mod prelude;
 pub mod print;
-
-#[cfg(CONFIG_PROC_FS)]
-pub mod proc_fs;
 
 pub mod random;
 pub mod seq_file;

@@ -1,146 +1,185 @@
 // SPDX-License-Identifier: GPL-2.0
 
-//! Example of using a [`seq_file`] in Rust.
-//!
-//! C header: [`include/linux/seq_file.h`](../../../include/linux/seq_file.h)
-//! C header: [`include/linux/proc_fs.h`](../../../include/linux/proc_fs.h)
-//!
-//! Reference: <https://www.kernel.org/doc/html/latest/filesystems/seq_file.html>
+//! Rust miscellaneous device sample.
 
-#![no_std]
-#![feature(allocator_api, global_asm, try_reserve)]
-
-use alloc::boxed::Box;
-use core::{
-    cmp::min,
-    convert::TryInto,
-    fmt::Write,
-    iter::{repeat, Peekable, Repeat, Take},
-    pin::Pin,
-};
+use kernel::prelude::*;
 use kernel::{
-    c_str,
     file::File,
-    file_operations::{FileOpener, FileOperations},
-    io_buffer::IoBufferWriter,
-    miscdev, mutex_init,
-    prelude::*,
-    proc_fs, seq_file,
-    sync::{Mutex, Ref},
-    Error, Result,
+    file_operations::FileOperations,
+    io_buffer::{IoBufferReader, IoBufferWriter},
+    miscdev, seq_file,
+    seq_file::SeqFileDebugFsDirEntry,
+    sync::{CondVar, Mutex, Ref, RefBorrow, UniqueRef},
 };
 
 module! {
-    type: RustSeqFileDev,
-    name: b"rust_seq_file",
-    author: b"Adam Bratschi-Kaye",
-    description: b"Rust sample using a seq_file",
+    type: RustMiscdev,
+    name: b"rust_miscdev",
+    author: b"Rust for Linux Contributors",
+    description: b"Rust miscellaneous device sample",
     license: b"GPL v2",
 }
 
-struct State(Mutex<u32>);
+const MAX_TOKENS: usize = 3;
 
-impl State {
-    fn try_new() -> Result<Pin<Ref<Self>>> {
-        Ok(Ref::pinned(Ref::try_new_and_init(
-            unsafe { State(Mutex::new(0)) },
-            |mut state| {
-                // SAFETY: Mutex is pinned behind `Ref`.
-                let pin_state = unsafe { state.as_mut().map_unchecked_mut(|s| &mut s.0) };
-                mutex_init!(pin_state, "State::0");
-            },
-        )?))
-    }
+struct SharedStateInner {
+    token_count: usize,
 }
 
-impl seq_file::SeqOperations for State {
-    type Item = String;
-    type Iterator = Take<Repeat<String>>;
-    type DataWrapper = Pin<Ref<State>>;
-    type IteratorWrapper = Box<Peekable<Self::Iterator>>;
+struct SharedState {
+    state_changed: CondVar,
+    inner: Mutex<SharedStateInner>,
+}
 
-    fn display(item: &Self::Item) -> &str {
-        &item[..]
-    }
+impl SharedState {
+    fn try_new() -> Result<Ref<Self>> {
+        let mut state = Pin::from(UniqueRef::try_new(Self {
+            // SAFETY: `condvar_init!` is called below.
+            state_changed: unsafe { CondVar::new() },
+            // SAFETY: `mutex_init!` is called below.
+            inner: unsafe { Mutex::new(SharedStateInner { token_count: 0 }) },
+        })?);
 
-    fn start(&self) -> Result<Self::IteratorWrapper> {
-        const MAX_DIGITS: usize = 3;
-        const MAX_LENGTH: usize = MAX_DIGITS + 1;
-        const MAX_COUNT: u32 = 10u32.pow(MAX_DIGITS as u32) - 1;
+        // SAFETY: `state_changed` is pinned when `state` is.
+        let pinned = unsafe { state.as_mut().map_unchecked_mut(|s| &mut s.state_changed) };
+        kernel::condvar_init!(pinned, "SharedState::state_changed");
 
-        let count = self.0.lock();
-        let mut message = String::new();
+        // SAFETY: `inner` is pinned when `state` is.
+        let pinned = unsafe { state.as_mut().map_unchecked_mut(|s| &mut s.inner) };
+        kernel::mutex_init!(pinned, "SharedState::inner");
 
-        let template = if *count <= MAX_COUNT {
-            "rust_seq_file: device opened this many times: "
-        } else {
-            "rust_seq_file: device opened at least this many times: "
-        };
-        message.try_reserve_exact(template.len() + MAX_LENGTH)?;
-        // NOPANIC: We reserved space for `template` above.
-        message.push_str(template);
-        let message_count = min(*count, MAX_COUNT);
-        // NOPANIC: There are `MAX_LENGTH` characters remaining in the string which
-        // leaves space for a `MAX_DIGITS` digit number and the newline.
-        // `message_count` is `<= MAX_COUNT` means it has less than `MAX_DIGITS`
-        // digits.
-        writeln!(&mut message, "{}", message_count).map_err(|_| Error::ENOMEM)?;
-
-        Box::try_new(repeat(message).take((*count).try_into()?).peekable())
-            .map_err(|_| Error::ENOMEM)
+        Ok(state.into())
     }
 }
 
 struct Token;
-
-impl FileOpener<Pin<Ref<State>>> for Token {
-    fn open(ctx: &Pin<Ref<State>>) -> Result<Self::Wrapper> {
-        pr_info!("rust seq_file was opened!\n");
-        Ok(ctx.clone())
-    }
-}
-
 impl FileOperations for Token {
-    kernel::declare_file_operations!(read);
+    type Wrapper = Ref<SharedState>;
+    type OpenData = Ref<SharedState>;
 
-    type Wrapper = Pin<Ref<State>>;
+    kernel::declare_file_operations!(read, write);
 
-    fn read<T: IoBufferWriter>(shared: &Ref<State>, _: &File, _: &mut T, _: u64) -> Result<usize> {
-        *(shared.0.lock()) += 1;
-        Ok(0)
+    fn open(shared: &Ref<SharedState>, _file: &File) -> Result<Self::Wrapper> {
+        Ok(shared.clone())
+    }
+
+    fn read(
+        shared: RefBorrow<'_, SharedState>,
+        _: &File,
+        data: &mut impl IoBufferWriter,
+        offset: u64,
+    ) -> Result<usize> {
+        // Succeed if the caller doesn't provide a buffer or if not at the start.
+        if data.is_empty() || offset != 0 {
+            return Ok(0);
+        }
+
+        {
+            let mut inner = shared.inner.lock();
+
+            // Wait until we are allowed to decrement the token count or a signal arrives.
+            while inner.token_count == 0 {
+                if shared.state_changed.wait(&mut inner) {
+                    return Err(Error::EINTR);
+                }
+            }
+
+            // Consume a token.
+            inner.token_count -= 1;
+        }
+
+        // Notify a possible writer waiting.
+        shared.state_changed.notify_all();
+
+        // Write a one-byte 1 to the reader.
+        data.write_slice(&[1u8; 1])?;
+        Ok(1)
+    }
+
+    fn write(
+        shared: RefBorrow<'_, SharedState>,
+        _: &File,
+        data: &mut impl IoBufferReader,
+        _offset: u64,
+    ) -> Result<usize> {
+        {
+            let mut inner = shared.inner.lock();
+
+            // Wait until we are allowed to increment the token count or a signal arrives.
+            while inner.token_count == MAX_TOKENS {
+                if shared.state_changed.wait(&mut inner) {
+                    return Err(Error::EINTR);
+                }
+            }
+
+            // Increment the number of token so that a reader can be released.
+            inner.token_count += 1;
+        }
+
+        // Notify a possible reader waiting.
+        shared.state_changed.notify_all();
+        Ok(data.len())
     }
 }
 
-struct RustSeqFileDev {
-    _proc: proc_fs::ProcDirEntry<Pin<Ref<State>>>,
-    _dev: Pin<Box<miscdev::Registration<Pin<Ref<State>>>>>,
-}
+impl seq_file::SeqOperations for Token {
+    type Item = usize;
+    type OpenData = Ref<SharedState>;
+    type DataWrapper = Ref<SharedState>;
+    type IteratorWrapper = Box<(usize, usize)>;
 
-impl KernelModule for RustSeqFileDev {
-    fn init() -> Result<Self> {
-        pr_info!("Rust seq_file sample (init)\n");
+    fn open<'a>(open_data: RefBorrow<'a, SharedState>) -> Result<Ref<SharedState>> {
+        Ok(open_data.into())
+    }
 
-        let state = State::try_new()?;
+    fn start(data: &Self::DataWrapper) -> Option<Self::IteratorWrapper> {
+        let total = data.inner.lock().token_count;
+        Box::try_new((total, 1)).ok()
+    }
 
-        let proc_dir_entry = proc_fs::ProcDirEntry::new_seq_private::<State>(
-            c_str!("rust_seq_file"),
-            state.clone(),
-        )?;
+    fn next(iterator: &mut Self::IteratorWrapper) -> bool {
+        let total = iterator.0;
+        let current = iterator.1;
+        if total == current {
+            false
+        } else {
+            iterator.1 += 1;
+            true
+        }
+    }
 
-        let dev_reg =
-            miscdev::Registration::new_pinned::<Token>(c_str!("rust_seq_file"), None, state)?;
-
-        let dev = RustSeqFileDev {
-            _proc: proc_dir_entry,
-            _dev: dev_reg,
-        };
-
-        Ok(dev)
+    fn current(iterator: &Self::IteratorWrapper) -> core::option::Option<Self::Item> {
+        let total = iterator.0;
+        let current = iterator.1;
+        if total > current {
+            Some(current)
+        } else {
+            None
+        }
     }
 }
 
-impl Drop for RustSeqFileDev {
+struct RustMiscdev {
+    _dev: Pin<Box<miscdev::Registration<Token>>>,
+    _debugfs: SeqFileDebugFsDirEntry<Token>,
+}
+
+impl KernelModule for RustMiscdev {
+    fn init(name: &'static CStr, _module: &'static ThisModule) -> Result<Self> {
+        pr_info!("Rust miscellaneous device sample (init)\n");
+
+        let state = SharedState::try_new()?;
+        let debugfs = seq_file::debugfs_create_file(fmt!("{name}"), state.clone())?;
+
+        Ok(RustMiscdev {
+            _dev: miscdev::Registration::new_pinned(fmt!("{name}"), state)?,
+            _debugfs: debugfs,
+        })
+    }
+}
+
+impl Drop for RustMiscdev {
     fn drop(&mut self) {
-        pr_info!("Rust seq_file sample (exit)\n");
+        pr_info!("Rust seq file device sample (exit)\n");
     }
 }
