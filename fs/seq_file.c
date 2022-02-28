@@ -83,6 +83,8 @@ int seq_open(struct file *file, const struct seq_operations *op)
 	 * file.open() which calls seq_open() and then sets FMODE_PWRITE.
 	 */
 	file->f_mode &= ~FMODE_PWRITE;
+	pr_alert("seq_open has file %p and private_data %p", file,
+		 file->private_data);
 	return 0;
 }
 EXPORT_SYMBOL(seq_open);
@@ -176,6 +178,8 @@ ssize_t seq_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	void *p;
 	int err = 0;
 
+	pr_alert("Start seq_read_iter private is %p", m->private);
+
 	if (!iov_iter_count(iter))
 		return 0;
 
@@ -222,6 +226,8 @@ ssize_t seq_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	}
 	// get a non-empty record in the buffer
 	m->from = 0;
+	pr_alert("Start seq_read_iter just before calling start %p",
+		 m->private);
 	p = m->op->start(m, &m->index);
 	while (1) {
 		err = PTR_ERR(p);

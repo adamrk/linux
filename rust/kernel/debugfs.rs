@@ -51,6 +51,6 @@ impl<T: PointerWrapper> Drop for DebugFsDirEntry<T> {
             bindings::debugfs_remove(self.dentry);
         }
         // SAFETY: `self.data` was created by a call to `T::into_pointer`.
-        unsafe { drop(T::from_pointer(self.data)) }
+        unsafe { T::from_pointer(self.data) };
     }
 }

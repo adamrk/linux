@@ -57,8 +57,8 @@ use crate::{
 ///
 /// [`seq_operations`]: ../../../include/linux/seq_file.h
 pub trait SeqOperations {
-    /// Type produced on each iteration.
-    type Item: Display;
+    /// TODOABK
+    type OpenData: PointerWrapper + Sync;
 
     /// Wrapper used to store a pointer to `Self` on the C side.
     type DataWrapper: PointerWrapper;
@@ -66,11 +66,13 @@ pub trait SeqOperations {
     /// Wrapper used to store a pointer to the iterator on the C side.
     type IteratorWrapper: PointerWrapper;
 
-    /// TODOABK
-    type OpenData: PointerWrapper + Sync;
+    /// Type produced on each iteration.
+    type Item: Display;
 
     /// Called once each time the `seq_file` is opened.
-    fn start(data: &Self::DataWrapper) -> Option<Self::IteratorWrapper>;
+    fn start<'a>(
+        data: <Self::DataWrapper as PointerWrapper>::Borrowed<'a>,
+    ) -> Option<Self::IteratorWrapper>;
 
     /// TODOABK: docs
     fn next(iterator: &mut Self::IteratorWrapper) -> bool;
@@ -164,10 +166,8 @@ extern "C" fn start_callback<T: SeqOperations>(
     // from `proc_create_seq_private` on the C side with data created via
     // `T::DataWrapper::into_pointer`. We don't move the data in the wrapper
     // so the pointer will remain valid for later calls.
-    let data_wrapper = unsafe { T::DataWrapper::from_pointer((*m).private) };
-    let iterator = T::start(&data_wrapper);
-    // Data is still used in the `proc_dir_entry`.
-    mem::forget(data_wrapper);
+    let data_wrapper = unsafe { T::DataWrapper::borrow((*m).private) };
+    let iterator = T::start(data_wrapper);
     // SAFETY: The caller guarantees that `pos` points to a valid `loff_t`.
     let pos = unsafe { *pos };
     match iterator {
@@ -209,7 +209,7 @@ where
             )
         };
         if result != 0 {
-            // Close file?
+            // TODOABK: Close file?
             return result;
         }
 
@@ -220,14 +220,17 @@ where
             Err(err) => return err.to_kernel_errno(),
         };
 
-        unsafe { *((*file).private_data as *mut bindings::seq_file) }.private =
-            data_wrapper.into_pointer() as *mut _;
+        let data_pointer = data_wrapper.into_pointer() as *mut c_types::c_void;
+        unsafe {
+            (*((*file).private_data as *mut bindings::seq_file)).private =
+                data_pointer as *mut c_types::c_void
+        };
         result
     }
 
     const VTABLE: bindings::file_operations = bindings::file_operations {
         open: Some(Self::open_callback),
-        release: Some(bindings::seq_release_private),
+        release: Some(bindings::seq_release),
         read: Some(bindings::seq_read),
         llseek: Some(bindings::seq_lseek),
 
@@ -264,18 +267,14 @@ where
 
 /// TODOABK: docs
 pub struct SeqFileDebugFsDirEntry<T: SeqOperations> {
-    _debugfs_entry: DebugFsDirEntry<T::DataWrapper>,
+    _debugfs_entry: DebugFsDirEntry<T::OpenData>,
 }
 
 /// TODOABK: finish doc
-pub fn debugfs_create_file<'a, T, D: 'a>(
+pub fn debugfs_create_file<T: SeqOperations>(
     name: fmt::Arguments<'_>,
-    data: D,
-) -> Result<SeqFileDebugFsDirEntry<T>>
-where
-    T: SeqOperations<DataWrapper = D>,
-    D: PointerWrapper + Clone,
-{
+    data: T::OpenData,
+) -> Result<SeqFileDebugFsDirEntry<T>> {
     let name = CString::try_from_fmt(name)?;
     let debugfs_entry = unsafe {
         DebugFsDirEntry::create_file(&name, data, &SeqFileOperationsVTable::<T>::VTABLE)

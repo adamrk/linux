@@ -1,7 +1,7 @@
 #!/bin/sh
 
-busybox insmod rust_minimal.ko
-busybox  rmmod rust_minimal.ko
+# busybox insmod rust_minimal.ko
+# busybox  rmmod rust_minimal.ko
 
 # busybox insmod rust_print.ko
 # busybox  rmmod rust_print.ko
@@ -40,12 +40,18 @@ busybox  rmmod rust_minimal.ko
 busybox insmod rust_seq_file.ko
 busybox mkdir proc
 busybox mount -t proc proc /proc
+busybox mkdir debugfs
+busybox mount -t debugfs debugfs /debugfs
 export RUST_SEQ_MINOR=$(busybox cat /proc/misc | busybox grep rust_seq_file | busybox cut -d ' ' -f 1)
 busybox mknod /dev/rust_seq_file0 c 10 $RUST_SEQ_MINOR
+busybox echo "reading from device"
 busybox cat /dev/rust_seq_file0
 busybox cat /dev/rust_seq_file0
-busybox cat /proc/rust_seq_file
+busybox echo "reading debug file"
+busybox cat /debugfs/rust_seq_file
+busybox echo "removing device file"
 busybox rm /dev/rust_seq_file0
+busybox echo "removing module"
 busybox rmmod rust_seq_file.ko
 
 busybox reboot -f

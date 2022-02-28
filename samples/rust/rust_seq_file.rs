@@ -14,9 +14,9 @@ use kernel::{
 
 module! {
     type: RustMiscdev,
-    name: b"rust_miscdev",
+    name: b"rust_seq_file",
     author: b"Rust for Linux Contributors",
-    description: b"Rust miscellaneous device sample",
+    description: b"Sample Rust miscellaneous device with a debugfs entry using seq_file",
     license: b"GPL v2",
 }
 
@@ -27,22 +27,15 @@ struct SharedStateInner {
 }
 
 struct SharedState {
-    state_changed: CondVar,
     inner: Mutex<SharedStateInner>,
 }
 
 impl SharedState {
     fn try_new() -> Result<Ref<Self>> {
         let mut state = Pin::from(UniqueRef::try_new(Self {
-            // SAFETY: `condvar_init!` is called below.
-            state_changed: unsafe { CondVar::new() },
             // SAFETY: `mutex_init!` is called below.
             inner: unsafe { Mutex::new(SharedStateInner { token_count: 0 }) },
         })?);
-
-        // SAFETY: `state_changed` is pinned when `state` is.
-        let pinned = unsafe { state.as_mut().map_unchecked_mut(|s| &mut s.state_changed) };
-        kernel::condvar_init!(pinned, "SharedState::state_changed");
 
         // SAFETY: `inner` is pinned when `state` is.
         let pinned = unsafe { state.as_mut().map_unchecked_mut(|s| &mut s.inner) };
@@ -76,63 +69,46 @@ impl FileOperations for Token {
 
         {
             let mut inner = shared.inner.lock();
-
-            // Wait until we are allowed to decrement the token count or a signal arrives.
-            while inner.token_count == 0 {
-                if shared.state_changed.wait(&mut inner) {
-                    return Err(Error::EINTR);
-                }
-            }
+            pr_alert!("read called, current count is {}", inner.token_count);
 
             // Consume a token.
-            inner.token_count -= 1;
+            inner.token_count += 1;
         }
 
         // Notify a possible writer waiting.
         shared.state_changed.notify_all();
 
         // Write a one-byte 1 to the reader.
-        data.write_slice(&[1u8; 1])?;
+        data.write_slice(&[b'a'; 1])?;
         Ok(1)
     }
+}
 
-    fn write(
-        shared: RefBorrow<'_, SharedState>,
-        _: &File,
-        data: &mut impl IoBufferReader,
-        _offset: u64,
-    ) -> Result<usize> {
-        {
-            let mut inner = shared.inner.lock();
+struct Log {
+    read_id: usize,
+}
 
-            // Wait until we are allowed to increment the token count or a signal arrives.
-            while inner.token_count == MAX_TOKENS {
-                if shared.state_changed.wait(&mut inner) {
-                    return Err(Error::EINTR);
-                }
-            }
-
-            // Increment the number of token so that a reader can be released.
-            inner.token_count += 1;
-        }
-
-        // Notify a possible reader waiting.
-        shared.state_changed.notify_all();
-        Ok(data.len())
+impl core::fmt::Display for Log {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        writeln!(f, "rust_seq_file read log: {}", self.read_id)
     }
 }
 
 impl seq_file::SeqOperations for Token {
-    type Item = usize;
     type OpenData = Ref<SharedState>;
     type DataWrapper = Ref<SharedState>;
     type IteratorWrapper = Box<(usize, usize)>;
+    type Item = Log;
 
     fn open<'a>(open_data: RefBorrow<'a, SharedState>) -> Result<Ref<SharedState>> {
+        pr_alert!(
+            "While opening, count is {}",
+            open_data.inner.lock().token_count,
+        );
         Ok(open_data.into())
     }
 
-    fn start(data: &Self::DataWrapper) -> Option<Self::IteratorWrapper> {
+    fn start<'a>(data: RefBorrow<'a, SharedState>) -> Option<Self::IteratorWrapper> {
         let total = data.inner.lock().token_count;
         Box::try_new((total, 1)).ok()
     }
@@ -148,11 +124,11 @@ impl seq_file::SeqOperations for Token {
         }
     }
 
-    fn current(iterator: &Self::IteratorWrapper) -> core::option::Option<Self::Item> {
+    fn current(iterator: &Self::IteratorWrapper) -> core::option::Option<Log> {
         let total = iterator.0;
         let current = iterator.1;
-        if total > current {
-            Some(current)
+        if total >= current {
+            Some(Log { read_id: current })
         } else {
             None
         }
