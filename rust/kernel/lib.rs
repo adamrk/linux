@@ -85,6 +85,8 @@ mod build_assert;
 pub mod prelude;
 pub mod print;
 pub mod random;
+#[cfg(CONFIG_DEBUG_FS)]
+pub mod seq_file;
 mod static_assert;
 #[doc(hidden)]
 pub mod std_vendor;

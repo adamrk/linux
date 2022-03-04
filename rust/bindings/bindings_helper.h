@@ -33,6 +33,7 @@
 #include <linux/poll.h>
 #include <linux/random.h>
 #include <linux/security.h>
+#include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/sysctl.h>
 #include <linux/uaccess.h>
