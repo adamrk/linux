@@ -106,8 +106,8 @@ pub trait SeqOperations {
     fn open(open_data: &Self::OpenData) -> Result<Self::DataWrapper>;
 
     /// Called once on each execution of fops->read or fops->read_iter.
-    fn start<'a>(
-        data: <Self::DataWrapper as PointerWrapper>::Borrowed<'a>,
+    fn start(
+        data: <Self::DataWrapper as PointerWrapper>::Borrowed<'_>,
     ) -> Option<Self::IteratorWrapper>;
 
     /// Moves the iterator to the next item. Iteration will stop if this returns
@@ -115,8 +115,8 @@ pub trait SeqOperations {
     fn next(iterator: &mut Self::IteratorWrapper) -> bool;
 
     /// Returns the current item. Items can be skipped by returning `None`.
-    fn current<'a>(
-        iterator: <Self::IteratorWrapper as PointerWrapper>::Borrowed<'a>,
+    fn current(
+        iterator: <Self::IteratorWrapper as PointerWrapper>::Borrowed<'_>,
     ) -> Option<Self::Item>;
 }
 
