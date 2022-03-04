@@ -48,6 +48,8 @@ pub mod chrdev;
 #[cfg(CONFIG_COMMON_CLK)]
 pub mod clk;
 pub mod cred;
+#[cfg(CONFIG_DEBUG_FS)]
+pub mod debugfs;
 pub mod device;
 pub mod driver;
 mod error;

@@ -2,6 +2,7 @@
 
 #include <linux/cdev.h>
 #include <linux/clk.h>
+#include <linux/debugfs.h>
 #include <linux/errname.h>
 #include <linux/fs.h>
 #include <linux/module.h>
