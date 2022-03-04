@@ -150,7 +150,6 @@ impl<T: PointerWrapper + 'static> DebugFsFile<T> {
     ///
     /// `fops` must be valid when opening an `inode` with `data::into_pointer`
     /// stored in `i_private`.
-    #[allow(dead_code)] // To be removed when there is a caller.
     pub(crate) unsafe fn create_with_parent(
         name: &CStr,
         parent: &mut DebugFsDirectory,
@@ -171,7 +170,6 @@ impl<T: PointerWrapper + 'static> DebugFsFile<T> {
     ///
     /// `fops` must be valid when opening an `inode` with `data::into_pointer`
     /// stored in `i_private`.
-    #[allow(dead_code)] // To be removed when there is a caller.
     pub(crate) unsafe fn create_toplevel(
         name: &CStr,
         data: T,
